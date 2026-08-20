@@ -45,7 +45,9 @@ function treeDigest(root: string): string {
 }
 
 beforeAll(() => {
-  execFileSync("npm", ["run", "build"], {
+  const npmExecPath = process.env.npm_execpath;
+  if (!npmExecPath) throw new Error("npm_execpath is required to exercise the package build");
+  execFileSync(process.execPath, [npmExecPath, "run", "build"], {
     cwd: repository,
     env: childEnv,
     encoding: "utf8",

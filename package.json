@@ -28,7 +28,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsup src/index.ts src/cli.ts --format esm --dts --clean --sourcemap && mkdir -p dist/prompts && cp src/model/prompts/*.md dist/prompts/",
+    "build": "tsup src/index.ts src/cli.ts --format esm --dts --clean --sourcemap && node scripts/copy-prompts.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint src test --max-warnings=0",

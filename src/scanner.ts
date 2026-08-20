@@ -13,24 +13,13 @@ import { ATTACK_PATTERNS_CONTENT, ATTACK_PATTERNS_PATH, buildModelPrompts, forma
 import { redact } from "./model/normalize.js";
 import { TokenUsageCollector } from "./model/usage.js";
 import { getMessages } from "./i18n/index.js";
-import { collectPaths } from "./input.js";
+import { collectPaths, isSafePath, isSafeRelativePath } from "./input.js";
 import { ScanSkillReportSchema, ScanSkillRequestSchema, type Finding, type ScanDependencies, type ScanSkillReport, type SkillFile } from "./types.js";
 
-// Accepts clean relative paths and absolute POSIX paths; rejects NUL, backslashes, drive letters, `..` and empty segments.
-const safePath = (path: string): boolean => {
-  if (!path || path.includes("\0") || path.includes("\\") || /^[A-Za-z]:/.test(path)) return false;
-  const parts = path.split("/");
-  for (let i = parts[0] === "" ? 1 : 0; i < parts.length; i++) {
-    const part = parts[i];
-    if (!part || part === "." || part === "..") return false;
-  }
-  return true;
-};
-
-function validateFiles(inputFiles: SkillFile[], detectContentNul = true): { files: SkillFile[]; skipped: ScanSkillReport["skippedFiles"] } {
+function validateFiles(inputFiles: SkillFile[], detectContentNul = true, allowDiskPaths = false): { files: SkillFile[]; skipped: ScanSkillReport["skippedFiles"] } {
   const paths = new Set<string>(); const files: SkillFile[] = []; const skipped: ScanSkillReport["skippedFiles"] = [];
   for (const file of inputFiles) {
-    if (!safePath(file.path)) throw new Error(`Invalid relative file path: ${JSON.stringify(file.path)}`);
+    if (!(allowDiskPaths ? isSafePath(file.path) : isSafeRelativePath(file.path))) throw new Error(`Invalid relative file path: ${JSON.stringify(file.path)}`);
     if (paths.has(file.path)) throw new Error(`Duplicate relative file path: ${JSON.stringify(file.path)}`);
     paths.add(file.path);
     if (file.isBinary || (detectContentNul && file.content.includes("\0"))) skipped.push({ path: file.path, reason: "binary file was not scanned" });
@@ -74,7 +63,7 @@ export async function scanSkill(input: unknown, dependencies: ScanDependencies =
       }
     : await collectPaths(request.paths!);
   const allInputFiles = [...diskInput.files, ...diskInput.excludedFiles];
-  const validated = validateFiles(diskInput.files, Boolean(request.files));
+  const validated = validateFiles(diskInput.files, Boolean(request.files), Boolean(request.paths));
   const analysisPaths = new Set(diskInput.analysisPaths);
   const files = validated.files.filter((file) => analysisPaths.has(file.path));
   const skipped = validated.skipped;
