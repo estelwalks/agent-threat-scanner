@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { FetchLike, ModelConfig, SkillFile } from "../types.js";
+import type { TokenUsageCollector, UsageContext } from "./usage.js";
 
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 /** Single behavioral risk item returned by the model (reference BehavioralRiskItem format). */
@@ -94,15 +95,17 @@ function appendJsonHint(messages: ChatMessage[]): ChatMessage[] {
 }
 
 /** Low level: sends a custom message array to either provider and parses JSON (OpenAI /chat/completions or Anthropic /messages). */
-export async function chatJson<S extends z.ZodType>(fetcher: FetchLike, model: ModelConfig, modelName: string, messages: ChatMessage[], schema: S): Promise<z.infer<S>> {
+export async function chatJson<S extends z.ZodType>(fetcher: FetchLike, model: ModelConfig, modelName: string, messages: ChatMessage[], schema: S, usage?: { collector: TokenUsageCollector; context: UsageContext }): Promise<z.infer<S>> {
   const abort = new AbortController(); const timer = setTimeout(() => abort.abort(), model.timeoutMs);
   const provider = resolveProvider(model);
   const promptMessages = provider === "openai" && !messages.some((m) => /json/i.test(m.content)) ? appendJsonHint(messages) : messages;
   try {
     const request = provider === "anthropic" ? buildAnthropicRequest(model, modelName, promptMessages) : buildOpenAIRequest(model, modelName, promptMessages);
+    usage?.collector.request(usage.context);
     const response = await fetcher(request.url, { method: "POST", headers: request.headers, signal: abort.signal, body: JSON.stringify(request.body) });
     if (!response.ok) throw new Error(`model HTTP ${response.status}`);
     const body: unknown = await response.json();
+    usage?.collector.response(usage.context, body);
     const text = provider === "anthropic"
       ? (body as { content?: Array<{ type?: string; text?: string }> }).content?.find((block) => block.type === "text")?.text
       : (body as { choices?: Array<{ message?: { content?: unknown } }> }).choices?.[0]?.message?.content;
@@ -112,12 +115,12 @@ export async function chatJson<S extends z.ZodType>(fetcher: FetchLike, model: M
 }
 
 /** Single-shot task-style ask (system + user(task + payload)). Pass `system` to use a custom system prompt (e.g. a reference prompt); a string `payload` is sent verbatim instead of JSON-encoded. */
-export async function askModel<S extends z.ZodType>(fetcher: FetchLike, model: ModelConfig, modelName: string, task: string, payload: unknown, shape: string, schema: S, system?: string): Promise<z.infer<S>> {
+export async function askModel<S extends z.ZodType>(fetcher: FetchLike, model: ModelConfig, modelName: string, task: string, payload: unknown, shape: string, schema: S, system?: string, usage?: { collector: TokenUsageCollector; context: UsageContext }): Promise<z.infer<S>> {
   const payloadText = typeof payload === "string" ? payload : JSON.stringify(payload);
   return chatJson(fetcher, model, modelName, [
     { role: "system", content: system ?? `${SYSTEM_PROMPT} Expected response shape: ${shape}.` },
     { role: "user", content: `${task}\n${payloadText}` },
-  ], schema);
+  ], schema, usage);
 }
 
 export const DEFAULT_CONTENT_CAP = 30_000;

@@ -11,6 +11,7 @@ import type { BehavioralRiskItem } from "./model/client.js";
 import { runBehavioralAgent } from "./model/agent.js";
 import { ATTACK_PATTERNS_CONTENT, ATTACK_PATTERNS_PATH, buildModelPrompts, formatFilesForPrompt, formatFindingsForVerification } from "./model/prompts.js";
 import { redact } from "./model/normalize.js";
+import { TokenUsageCollector } from "./model/usage.js";
 import { getMessages } from "./i18n/index.js";
 import { collectPaths } from "./input.js";
 import { ScanSkillReportSchema, ScanSkillRequestSchema, type Finding, type ScanDependencies, type ScanSkillReport, type SkillFile } from "./types.js";
@@ -61,6 +62,7 @@ export async function scanSkill(input: unknown, dependencies: ScanDependencies =
   const messages = getMessages(locale);
   const prompts = buildModelPrompts();
   const log = dependencies.log;
+  const usageCollector = new TokenUsageCollector();
   log?.(`scan: locale=${locale} mode=${request.mode}`);
   const diskInput = request.files
     ? {
@@ -102,7 +104,7 @@ export async function scanSkill(input: unknown, dependencies: ScanDependencies =
           try {
             const ruleReviewList = formatFindingsForVerification(toVerify.map((f) => ({ ruleId: f.ruleId, ruleName: f.ruleName, path: f.path, line: f.line, message: f.message, excerpt: f.excerpt, context: buildContext(files, f.path, f.line) })));
             const ruleReviewTask = `Please verify each of the following rule hits for whether it is a real risk. The context around each hit (±2 lines) is provided; no file reads are needed. Output strict JSON per the schema.\n\nHit list:\n${ruleReviewList}`;
-            const veri = await askModel(fetcher, request.model, request.model.liteModel, ruleReviewTask, "", prompts.shapeVerifications, RuleVerificationSchema, prompts.ruleReview);
+            const veri = await askModel(fetcher, request.model, request.model.liteModel, ruleReviewTask, "", prompts.shapeVerifications, RuleVerificationSchema, prompts.ruleReview, { collector: usageCollector, context: { model: request.model.liteModel, branch: "ruleReview" } });
             const decisions = new Map(veri.verifications.map((item) => [item.index, item.is_true_positive]));
             findings = [...bypassed, ...toVerify.filter((_, index) => decisions.get(index) !== false)];
             branches.push({ name: "ruleReview", status: "complete" });
@@ -119,7 +121,7 @@ export async function scanSkill(input: unknown, dependencies: ScanDependencies =
           log?.(`singleFileAnalysis: analyzing ${skillFiles.length} file(s) with ${request.model.proModel}`);
           const singleTask = "Perform a behavioral security analysis of the following SKILL content to find security risks that static rules cannot detect. Output strict JSON per the schema; do not use markdown code fences.\nBelow is the content:\n\n";
           try {
-            const response = await askModel(fetcher, request.model, request.model.proModel, singleTask, formatFilesForPrompt(skillFiles), prompts.shapeFindings, ModelResponseSchema, prompts.single);
+            const response = await askModel(fetcher, request.model, request.model.proModel, singleTask, formatFilesForPrompt(skillFiles), prompts.shapeFindings, ModelResponseSchema, prompts.single, { collector: usageCollector, context: { model: request.model.proModel, branch: "singleFileAnalysis" } });
             results.push({ name: "singleFileAnalysis", findings: response.findings });
           } catch (error) {
             results.push({ name: "singleFileAnalysis", error: error instanceof Error ? error.message : "unknown model error" });
@@ -133,9 +135,9 @@ export async function scanSkill(input: unknown, dependencies: ScanDependencies =
           try {
             let behavioralFindings: BehavioralRiskItem[];
             try {
-              behavioralFindings = await runBehavioralAgent(fetcher, request.model, agentFiles, prompts.agentSystem, prompts.agentTask(fileListJson));
+              behavioralFindings = await runBehavioralAgent(fetcher, request.model, agentFiles, prompts.agentSystem, prompts.agentTask(fileListJson), usageCollector);
             } catch {
-              const response = await askModel(fetcher, request.model, request.model.proModel, multiTask, formatFilesForPrompt(capFilesForModel(files, request.model)), prompts.shapeFindings, ModelResponseSchema, prompts.multi);
+              const response = await askModel(fetcher, request.model, request.model.proModel, multiTask, formatFilesForPrompt(capFilesForModel(files, request.model)), prompts.shapeFindings, ModelResponseSchema, prompts.multi, { collector: usageCollector, context: { model: request.model.proModel, branch: "multiFileAnalysis" } });
               behavioralFindings = response.findings;
             }
             results.push({ name: "multiFileAnalysis", findings: behavioralFindings });
@@ -154,7 +156,7 @@ export async function scanSkill(input: unknown, dependencies: ScanDependencies =
         const modelDeduped = locationDeduped.model;
         log?.(`dedup: location dedup kept ${modelDeduped.length} of ${modelFindings.length} model finding(s)`);
         // 4) Semantic dedup compares every retained rule finding against model findings; model wins on overlap.
-        const keptRules = await semanticDedup(fetcher, request.model, verifiedStatic, modelDeduped);
+        const keptRules = await semanticDedup(fetcher, request.model, verifiedStatic, modelDeduped, usageCollector);
         log?.(`dedup: semantic dedup kept ${keptRules.length} of ${verifiedStatic.length} rule finding(s)`);
         findings = [...keptRules, ...modelDeduped];
       }
@@ -171,7 +173,7 @@ export async function scanSkill(input: unknown, dependencies: ScanDependencies =
     threatLevel: level, threatLevelDisplay: messages.threatLevel[level],
     categories: buildCategories(findings, locale), summary: buildSummary(allInputFiles.length, findings, locale),
     findings, rules: buildRuleAggregations(findings.filter((f) => f.source === "static"), locale),
-    branches, skippedFiles: allSkipped,
+    branches, skippedFiles: allSkipped, tokenUsage: usageCollector.report(),
   };
   return ScanSkillReportSchema.parse(report);
 }

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { describe, expect, it } from "vitest";
 import { capFilesForModel, capForModel, chatJson, parseJsonText } from "../src/model/client.js";
 import type { ModelConfig } from "../src/types.js";
+import { TokenUsageCollector } from "../src/model/usage.js";
 
 const schema = z.object({ ok: z.boolean() });
 const config: ModelConfig = { endpoint: "https://api.example.com/v1", apiKey: "sk-test", liteModel: "lite", proModel: "pro", timeoutMs: 1000, maxAgentTurns: 12 };
@@ -126,7 +127,14 @@ describe("chatJson (errors)", () => {
     await expect(chatJson(async () => new Response(JSON.stringify({}), { status: 200 }), config, "g", [{ role: "user", content: "x" }], schema)).rejects.toThrow("model response has no text content");
   });
   it("throws when the payload does not match the schema", async () => {
-    const fetcher = async () => new Response(JSON.stringify({ choices: [{ message: { content: '{"wrong":1}' } }] }), { status: 200 });
-    await expect(chatJson(fetcher, config, "g", [{ role: "user", content: "x" }], schema)).rejects.toThrow();
+    const collector = new TokenUsageCollector();
+    const fetcher = async () => new Response(JSON.stringify({ choices: [{ message: { content: '{"wrong":1}' } }], usage: { prompt_tokens: 7, completion_tokens: 2, total_tokens: 9 } }), { status: 200 });
+    await expect(chatJson(fetcher, config, "g", [{ role: "user", content: "x" }], schema, { collector, context: { model: "g", branch: "ruleReview" } })).rejects.toThrow();
+    expect(collector.report()).toMatchObject({ status: "complete", requestCount: 1, reportedRequestCount: 1, inputTokens: 7, outputTokens: 2, totalTokens: 9 });
+  });
+  it("records a non-2xx request without fabricating usage", async () => {
+    const collector = new TokenUsageCollector();
+    await expect(chatJson(async () => new Response("{}", { status: 429 }), config, "g", [{ role: "user", content: "x" }], schema, { collector, context: { model: "g", branch: "ruleReview" } })).rejects.toThrow("model HTTP 429");
+    expect(collector.report()).toMatchObject({ status: "unavailable", requestCount: 1, reportedRequestCount: 0, totalTokens: 0 });
   });
 });

@@ -57,7 +57,11 @@ slugs plus localized `kindDisplay`/`severityDisplay`), `rules` (static findings 
 ruleId, with `count` and per-match `matches`), `branches` (static/ruleReview/singleFileAnalysis/
 multiFileAnalysis with complete/skipped/failed), `skippedFiles`, `categories` (per-kind count /
 highest severity / total weight), `threatLevel`, `threatLevelDisplay`, `locale`, `contentHash`
-and `riskScore`. Excerpts are secret-redacted; in `files` mode, path/content are never read from disk.
+and `riskScore`. It also includes `tokenUsage`: model request and reported-usage counts, input/output/total
+tokens, plus per-model and per-branch breakdowns. Its status is `not_applicable`, `complete`, `partial`, or
+`unavailable`, so a proxy that omits usage is never misreported as a measured zero-token call. OpenAI cached
+tokens remain included in input, while Anthropic cache read/creation tokens are added to input; cache hits are
+also exposed separately as `cachedInputTokens`. Excerpts are secret-redacted; in `files` mode, path/content are never read from disk.
 When scanning `paths`, report `path` values are absolute disk paths.
 Each finding carries a `fileHash` (SHA-256 of path+content) and its `id` is `ruleId:fileHash:line`,
 so ids are content-addressed and never leak the path.

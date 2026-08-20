@@ -14,6 +14,8 @@ interface GoldenProjection {
   categoryKinds: string[];
   findingSources: string[];
   branches: string[];
+  tokenUsageStatus: string;
+  tokenRequestCount: number;
 }
 
 interface ReportGolden {
@@ -32,7 +34,7 @@ const model = {
 };
 
 function openai(payload: unknown): Response {
-  return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(payload) } }] }), { status: 200 });
+  return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(payload) } }], usage: { prompt_tokens: 8, completion_tokens: 2, total_tokens: 10 } }), { status: 200 });
 }
 
 function userMessage(init?: RequestInit): string {
@@ -69,6 +71,8 @@ function project(report: ScanSkillReport): GoldenProjection {
     categoryKinds: Object.keys(report.categories).sort(),
     findingSources: report.findings.map((finding) => finding.source),
     branches: report.branches.map((branch) => `${branch.name}:${branch.status}${branch.detail ? `:${branch.detail}` : ""}`),
+    tokenUsageStatus: report.tokenUsage.status,
+    tokenRequestCount: report.tokenUsage.requestCount,
   };
 }
 

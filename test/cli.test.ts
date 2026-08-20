@@ -189,6 +189,7 @@ describe("output", () => {
       rules: [{ ruleId: "builtin-01", ruleName: "下载脚本管道执行", kind: "remote_execution", severity: "high", weight: 45, count: 1, matches: [{ path: "SKILL.md", line: 1 }] }],
       branches: [{ name: "static", status: "complete" }],
       skippedFiles: [],
+      tokenUsage: { status: "not_applicable", requestCount: 0, reportedRequestCount: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, cachedInputTokens: 0, byModel: {}, byBranch: {} },
     };
   }
   it("renders a summary with verdict, score, category and a top finding", () => {
@@ -197,6 +198,7 @@ describe("output", () => {
     expect(text).toContain("riskScore=0/100");
     expect(text).toContain("远程代码/命令执行");
     expect(text).toContain("下载脚本管道执行");
+    expect(text).toContain("tokenUsage=not_applicable requests=0 reported=0");
   });
   it("renders a no-findings line when the report is clean", () => {
     const report = makeReport();

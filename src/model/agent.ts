@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { chatJson, BehavioralRiskItemSchema, type BehavioralRiskItem, type ChatMessage } from "./client.js";
 import type { FetchLike, ModelConfig, SkillFile } from "../types.js";
+import type { TokenUsageCollector } from "./usage.js";
 
 const AgentTurnSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("tool_call"), tool: z.enum(["list_files", "read_file", "grep"]), args: z.object({ path: z.string().max(1024).optional(), start: z.number().int().positive().optional(), limit: z.number().int().positive().max(500).optional(), pattern: z.string().max(200).optional() }).strict() }).strict(),
@@ -39,11 +40,11 @@ function executeAgentTool(tool: string, args: { path?: string; start?: number; l
 }
 
 /** Pro-model ReAct loop: must produce a final after ≤ maxAgentTurns tool calls; any exception propagates so the caller can fall back. */
-export async function runBehavioralAgent(fetcher: FetchLike, model: ModelConfig, files: SkillFile[], agentSystem: string, agentTask: string): Promise<BehavioralRiskItem[]> {
+export async function runBehavioralAgent(fetcher: FetchLike, model: ModelConfig, files: SkillFile[], agentSystem: string, agentTask: string, usageCollector?: TokenUsageCollector): Promise<BehavioralRiskItem[]> {
   const maxTurns = model.maxAgentTurns ?? 12;
   const messages: ChatMessage[] = [{ role: "system", content: agentSystem }, { role: "user", content: agentTask }];
   for (let turn = 0; turn < maxTurns; turn++) {
-    const reply = await chatJson(fetcher, model, model.proModel, messages, AgentTurnSchema);
+    const reply = await chatJson(fetcher, model, model.proModel, messages, AgentTurnSchema, usageCollector ? { collector: usageCollector, context: { model: model.proModel, branch: "multiFileAnalysis" } } : undefined);
     if (reply.type === "final") return reply.findings;
     const result = executeAgentTool(reply.tool, reply.args, files);
     messages.push({ role: "assistant", content: JSON.stringify(reply) }, { role: "user", content: `Tool ${reply.tool} returned:\n${result}` });

@@ -7,8 +7,8 @@ export { buildCategories, buildRuleAggregations, buildSummary } from "./detectio
 export { dedupModel, semanticDedup } from "./detection/dedup.js";
 export { getMessages, format } from "./i18n/index.js";
 export {
-  RISK_KINDS, SEVERITIES, SCAN_MODES, SCAN_STATUSES, BRANCH_STATUSES, PROVIDERS, LOCALES, THREAT_LEVELS, LLM_SEVERITY_WEIGHTS,
+  RISK_KINDS, SEVERITIES, SCAN_MODES, SCAN_STATUSES, BRANCH_STATUSES, PROVIDERS, LOCALES, THREAT_LEVELS, TOKEN_USAGE_STATUSES, MODEL_BRANCHES, LLM_SEVERITY_WEIGHTS,
   RiskKindSchema, SeveritySchema, ThreatLevelSchema, ProviderSchema, LocaleSchema,
-  SkillFileSchema, ModelConfigSchema, ScanSkillRequestSchema, FindingSchema, BranchSchema, CategoryBucketSchema, RuleMatchSchema, RuleAggregationSchema, ScanSkillReportSchema,
+  SkillFileSchema, ModelConfigSchema, ScanSkillRequestSchema, FindingSchema, BranchSchema, CategoryBucketSchema, RuleMatchSchema, RuleAggregationSchema, TokenUsageBreakdownSchema, TokenUsageSchema, ScanSkillReportSchema,
 } from "./types.js";
-export type { ScanDependencies, ScanSkillRequest, ScanSkillReport, Finding, ModelConfig, ThreatLevel, CategoryBucket, RuleAggregation, LocaleKey, FetchLike } from "./types.js";
+export type { ScanDependencies, ScanSkillRequest, ScanSkillReport, Finding, ModelConfig, ThreatLevel, CategoryBucket, RuleAggregation, TokenUsage, TokenUsageBreakdown, ModelBranch, LocaleKey, FetchLike } from "./types.js";

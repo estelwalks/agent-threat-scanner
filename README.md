@@ -51,7 +51,10 @@ const reportFromPath = await scanSkill({ mode: "quick", paths: ["/path/to/skill_
 `kindDisplay`/`severityDisplay`）、`rules`（按 ruleId 聚合的静态发现，含 `count` 与逐条 `matches`）、
 `branches`（static/ruleReview/singleFileAnalysis/multiFileAnalysis，状态 complete/skipped/failed）、
 `skippedFiles`、`categories`（按类别统计数量 / 最高严重度 / 总权重）、`threatLevel`、
-`threatLevelDisplay`、`locale`、`contentHash` 与 `riskScore`。
+`threatLevelDisplay`、`locale`、`contentHash`、`riskScore` 与 `tokenUsage`。`tokenUsage` 提供模型请求数、
+返回 usage 的请求数、input/output/total token 总计，并按模型和分支细分；`status` 为 `not_applicable`、
+`complete`、`partial` 或 `unavailable`，因此代理未返回 usage 时不会被误报为已消耗 0 token。OpenAI 的
+缓存 token 已包含在 input 中，Anthropic 的 cache read/create token 会计入 input，`cachedInputTokens` 单独展示缓存命中量。
 摘录内容会做密钥脱敏；`files` 模式下路径与内容从不读盘。`paths` 模式下报告的 `path` 为磁盘绝对路径。
 每条 finding 携带 `fileHash`（path+content 的 SHA-256），`id` 为 `ruleId:fileHash:line`，内容寻址、不泄露路径。
 模型发现携带 `reasoning` 判定理由，`message`/`remediation` 由模型按请求 locale 提供（zh-CN 取中文变体）；模型分析使用 knownsec-skill-scanner 参考提示词的**英文版**（`src/model/prompts/*.md`），中文原版保留为 `*.zh.md`。

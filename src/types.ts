@@ -69,6 +69,23 @@ export const FindingSchema = z.object({
   reasoning: z.string().max(500).optional(),
 }).strict();
 export const BranchSchema = z.object({ name: z.enum(["static", "ruleReview", "singleFileAnalysis", "multiFileAnalysis"]), status: z.enum(BRANCH_STATUSES), detail: z.string().max(240).optional() }).strict();
+export const TOKEN_USAGE_STATUSES = ["not_applicable", "complete", "partial", "unavailable"] as const;
+export const MODEL_BRANCHES = ["ruleReview", "singleFileAnalysis", "multiFileAnalysis", "semanticDedup"] as const;
+const TokenUsageCountersSchema = z.object({
+  requestCount: z.number().int().nonnegative(),
+  reportedRequestCount: z.number().int().nonnegative(),
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  totalTokens: z.number().int().nonnegative(),
+  cachedInputTokens: z.number().int().nonnegative(),
+}).strict();
+export const TokenUsageBreakdownSchema = TokenUsageCountersSchema.extend({
+  status: z.enum(TOKEN_USAGE_STATUSES),
+}).strict();
+export const TokenUsageSchema = TokenUsageBreakdownSchema.extend({
+  byModel: z.record(TokenUsageBreakdownSchema),
+  byBranch: z.record(z.enum(MODEL_BRANCHES), TokenUsageBreakdownSchema),
+}).strict();
 export const CategoryBucketSchema = z.object({ count: z.number().int().nonnegative(), highestSeverity: SeveritySchema, totalWeight: z.number().int().nonnegative(), display: z.string() }).strict();
 export const RuleMatchSchema = z.object({ path: z.string(), line: z.number().int().positive().optional(), excerpt: z.string().max(240).optional(), fileHash: z.string().optional() }).strict();
 export const RuleAggregationSchema = z.object({
@@ -84,6 +101,7 @@ export const ScanSkillReportSchema = z.object({
   categories: z.record(CategoryBucketSchema), summary: z.string(),
   findings: z.array(FindingSchema), rules: z.array(RuleAggregationSchema),
   branches: z.array(BranchSchema), skippedFiles: z.array(z.object({ path: z.string(), reason: z.string() }).strict()),
+  tokenUsage: TokenUsageSchema,
 }).strict();
 
 export type RiskKind = (typeof RISK_KINDS)[number];
@@ -95,5 +113,8 @@ export type Finding = z.infer<typeof FindingSchema>;
 export type ModelConfig = z.infer<typeof ModelConfigSchema>;
 export type CategoryBucket = z.infer<typeof CategoryBucketSchema>;
 export type RuleAggregation = z.infer<typeof RuleAggregationSchema>;
+export type TokenUsage = z.infer<typeof TokenUsageSchema>;
+export type TokenUsageBreakdown = z.infer<typeof TokenUsageBreakdownSchema>;
+export type ModelBranch = (typeof MODEL_BRANCHES)[number];
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 export interface ScanDependencies { fetch?: FetchLike; log?: (message: string) => void }
