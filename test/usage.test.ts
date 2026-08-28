@@ -15,6 +15,12 @@ describe("model token usage", () => {
     } })).toEqual({ inputTokens: 100, outputTokens: 10, totalTokens: 110, cachedInputTokens: 30 });
   });
 
+  it("normalizes Responses usage and its cached token count", () => {
+    expect(normalizeModelUsage({ usage: {
+      input_tokens: 100, output_tokens: 20, total_tokens: 120, cached_tokens: 40,
+    } })).toEqual({ inputTokens: 100, outputTokens: 20, totalTokens: 120, cachedInputTokens: 40 });
+  });
+
   it("distinguishes complete, partial, unavailable, and not-applicable reporting", () => {
     expect(new TokenUsageCollector().report()).toMatchObject({ status: "not_applicable", requestCount: 0, reportedRequestCount: 0 });
     const collector = new TokenUsageCollector();

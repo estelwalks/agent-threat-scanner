@@ -7,6 +7,7 @@ import { envModel, isModelComplete, loadConfig, loadDotEnv, parseDotEnv, readCon
 import { main } from "../src/cli/main.js";
 import { renderJson, renderSummary } from "../src/cli/output.js";
 import type { ParsedArgs } from "../src/cli/args.js";
+import { ModelConfigSchema } from "../src/types.js";
 import type { ScanSkillReport } from "../src/types.js";
 
 const baseArgs: ParsedArgs = { quick: false, model: {}, json: false, help: false, version: false, verbose: false };
@@ -32,12 +33,13 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["--mode"])).toThrow(UsageError);
     expect(() => parseArgs(["--mode", "bogus"])).toThrow(UsageError);
     expect(() => parseArgs(["--locale", "xx"])).toThrow(UsageError);
+    expect(() => parseArgs(["--provider", "bogus"])).toThrow("invalid provider");
   });
   it("parses --config and --output in both forms", () => {
-    const args = parseArgs(["dir", "--config", "c.json", "--output=o.json", "--provider", "anthropic"]);
+    const args = parseArgs(["dir", "--config", "c.json", "--output=o.json", "--provider", "openai-responses"]);
     expect(args.config).toBe("c.json");
     expect(args.output).toBe("o.json");
-    expect(args.model.provider).toBe("anthropic");
+    expect(args.model.provider).toBe("openai-responses");
   });
 });
 
@@ -49,6 +51,10 @@ describe("config helpers", () => {
     expect(m.contextWindowTokens).toBe(1_000_000);
     expect(envModel({ LLM_TIMEOUT_MS: "abc" }).timeoutMs).toBeUndefined();
     expect(envModel({ LLM_PROVIDER: "bogus" }).provider).toBeUndefined();
+  });
+  it.each(["openai-responses", "openai-completions", "anthropic", "openai"])("accepts provider %s from env and config schema", (provider) => {
+    expect(envModel({ LLM_PROVIDER: provider }).provider).toBe(provider);
+    expect(ModelConfigSchema.safeParse({ endpoint: "https://example.com/v1", apiKey: "k", liteModel: "l", proModel: "p", provider }).success).toBe(true);
   });
   it("isModelComplete requires the four core fields", () => {
     expect(isModelComplete({ endpoint: "e", apiKey: "k", liteModel: "l", proModel: "p" })).toBe(true);

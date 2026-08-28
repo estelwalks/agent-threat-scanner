@@ -61,7 +61,7 @@ describe("chatJson (OpenAI-compatible)", () => {
       seenUrl = url; seenInit = init;
       return new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }), { status: 200 });
     };
-    const out = await chatJson(fetcher, config, "gpt-test", [{ role: "user", content: "hi" }], schema);
+    const out = await chatJson(fetcher, { ...config, provider: "openai-completions" }, "gpt-test", [{ role: "user", content: "hi" }], schema);
     expect(out).toEqual({ ok: true });
     expect(seenUrl).toBe("https://api.example.com/v1/chat/completions");
     const headers = seenInit?.headers as Record<string, string>;
@@ -88,6 +88,60 @@ describe("chatJson (OpenAI-compatible)", () => {
     const fetcher = async () => new Response(JSON.stringify({ choices: [{ message: { content: '```json\n{"ok":false}\n```' } }] }), { status: 200 });
     await expect(chatJson(fetcher, config, "gpt", [{ role: "user", content: "hi" }], schema)).resolves.toEqual({ ok: false });
   });
+  it("maps the legacy openai provider to Chat Completions", async () => {
+    let seenUrl = "";
+    const fetcher = async (url: string) => {
+      seenUrl = url;
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }), { status: 200 });
+    };
+    await expect(chatJson(fetcher, { ...config, provider: "openai" }, "gpt", [{ role: "user", content: "return json" }], schema)).resolves.toEqual({ ok: true });
+    expect(seenUrl).toBe("https://api.example.com/v1/chat/completions");
+  });
+});
+
+describe("chatJson (OpenAI Responses)", () => {
+  it("builds a Responses request with instructions, user/assistant input, JSON mode, and usage", async () => {
+    let seenUrl = "";
+    let seenInit: RequestInit | undefined;
+    const collector = new TokenUsageCollector();
+    const fetcher = async (url: string, init?: RequestInit) => {
+      seenUrl = url; seenInit = init;
+      return new Response(JSON.stringify({ output_text: '{"ok":true}', usage: { input_tokens: 11, output_tokens: 3, total_tokens: 14, cached_tokens: 2 } }), { status: 200 });
+    };
+    const out = await chatJson(fetcher, { ...config, provider: "openai-responses" }, "gpt-responses", [
+      { role: "system", content: "sys" },
+      { role: "user", content: "return json please" },
+      { role: "assistant", content: "previous answer" },
+    ], schema, { collector, context: { model: "gpt-responses", branch: "ruleReview" } });
+
+    expect(out).toEqual({ ok: true });
+    expect(seenUrl).toBe("https://api.example.com/v1/responses");
+    const headers = seenInit?.headers as Record<string, string>;
+    expect(headers.authorization).toBe("Bearer sk-test");
+    const body = JSON.parse(String(seenInit?.body));
+    expect(body).toMatchObject({
+      model: "gpt-responses",
+      instructions: "sys",
+      input: [
+        { role: "user", content: "return json please" },
+        { role: "assistant", content: "previous answer" },
+      ],
+      temperature: 0,
+      text: { format: { type: "json_object" } },
+    });
+    expect(body).not.toHaveProperty("messages");
+    expect(collector.report()).toMatchObject({ status: "complete", requestCount: 1, reportedRequestCount: 1, inputTokens: 11, outputTokens: 3, totalTokens: 14, cachedInputTokens: 2 });
+  });
+
+  it("extracts text from the raw output array when output_text is absent", async () => {
+    const fetcher = async () => new Response(JSON.stringify({
+      output: [
+        { type: "reasoning", content: [{ type: "reasoning_text", text: "ignored" }] },
+        { type: "message", role: "assistant", content: [{ type: "output_text", text: '{"ok":' }, { type: "output_text", text: "false}" }] },
+      ],
+    }), { status: 200 });
+    await expect(chatJson(fetcher, { ...config, provider: "openai-responses" }, "gpt", [{ role: "user", content: "return json" }], schema)).resolves.toEqual({ ok: false });
+  });
 });
 
 describe("chatJson (Anthropic Messages)", () => {
@@ -98,7 +152,7 @@ describe("chatJson (Anthropic Messages)", () => {
       seenUrl = url; seenInit = init;
       return new Response(JSON.stringify({ content: [{ type: "text", text: '{"ok":true}' }] }), { status: 200 });
     };
-    const anthropic = { ...config, endpoint: "https://api.anthropic.com/v1" };
+    const anthropic = { ...config, provider: "anthropic" as const, endpoint: "https://api.anthropic.com/v1" };
     const out = await chatJson(fetcher, anthropic, "claude-test", [{ role: "system", content: "sys" }, { role: "user", content: "hi" }], schema);
     expect(out).toEqual({ ok: true });
     expect(seenUrl).toBe("https://api.anthropic.com/v1/messages");

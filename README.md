@@ -8,7 +8,7 @@
 
 面向 Agent Skill 的隐私保护型安全扫描器（ESM / TypeScript）。它从不执行宿主提供的文件、也从不持久化 API key。
 扫描默认保持隐私：可传入内存 `files`（path + content，不读盘），也可传入文件/目录 `paths` 由扫描器从磁盘读取。
-`quick` 模式运行静态规则；`full` 模式额外通过 **OpenAI 兼容**或 **Anthropic Messages** API 进行模型复核。
+`quick` 模式运行静态规则；`full` 模式额外通过 **OpenAI Responses**、**OpenAI Chat Completions** 或 **Anthropic Messages** API 进行模型复核。
 API key 仅在单次请求中使用，从不落盘、也从不被返回。
 
 ```ts
@@ -74,26 +74,39 @@ src/
   i18n/        多语言资源（zh-CN / en-US / ja-JP / ko-KR）
   rules/       76 条参考规则 + 元数据（语言无关）
   detection/   静态扫描 / 文件级检查 / 去重 / 评分 / 报告聚合
-  model/       传输层（OpenAI/Anthropic）/ Agent 循环 / 归一化 / 提示词
+  model/       传输层（OpenAI Responses / Chat Completions / Anthropic）/ Agent 循环 / 归一化 / 提示词
   scanner.ts   编排器
   types.ts     Zod schemas
 ```
 
 ## LLM 配置与测试（full 模式）
 
-`model` 支持 OpenAI 与 Anthropic 两种格式，通过 `provider` 指定（`"openai" | "anthropic"`）。
+`model` 支持三种协议，通过 `provider` 指定：`"openai-responses"`、`"openai-completions"` 或
+`"anthropic"`。旧值 `"openai"` 仍兼容，并映射为 `"openai-completions"`。
 缺省时按 endpoint 自动探测：含 `anthropic`/`claude` 或路径以 `/messages` 结尾 → anthropic，
-否则 openai。
+以 `/responses` 结尾 → openai-responses，否则 → openai-completions。
 
 | provider | endpoint 约定 | 实际请求 | 鉴权头 |
 |---|---|---|---|
-| `openai` | 基础地址，如 `https://api.openai.com/v1` | 追加 `/chat/completions` | `Authorization: Bearer <key>` |
+| `openai-responses` | 基础地址，如 `https://api.openai.com/v1` | 追加 `/responses` | `Authorization: Bearer <key>` |
+| `openai-completions` | 基础地址，如 `https://api.openai.com/v1` | 追加 `/chat/completions` | `Authorization: Bearer <key>` |
 | `anthropic` | `https://api.anthropic.com/v1`（或省略 `/v1`） | 追加 `/messages` | `x-api-key` + `anthropic-version: 2023-06-01` |
+| `openai`（旧值） | 同 `openai-completions` | 追加 `/chat/completions` | `Authorization: Bearer <key>` |
 
 运行示例（`examples/run-full-scan.mjs` 读取环境变量、构造 `model`、对目录跑 full 扫描）：
 
 ```bash
-# OpenAI 兼容（OpenAI / DeepSeek / vLLM / Ollama ...）
+# OpenAI Responses
+LLM_PROVIDER=openai-responses LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
+LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
+node examples/run-full-scan.mjs /path/to/skill_dir
+
+# OpenAI Chat Completions 兼容（OpenAI / DeepSeek / vLLM / Ollama ...）
+LLM_PROVIDER=openai-completions LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
+LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
+node examples/run-full-scan.mjs /path/to/skill_dir
+
+# 未指定 LLM_PROVIDER 时，默认使用 openai-completions
 LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
 LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
 node examples/run-full-scan.mjs /path/to/skill_dir
@@ -108,7 +121,7 @@ node examples/run-full-scan.mjs /path/to/skill_dir
 
 | 变量 | 必填 | 说明 |
 |---|---|---|
-| `LLM_PROVIDER` | 否 | `openai` / `anthropic`；缺省按 endpoint 自动探测 |
+| `LLM_PROVIDER` | 否 | `openai-responses` / `openai-completions` / `anthropic`；旧值 `openai` 映射为 `openai-completions`；缺省按 endpoint 自动探测 |
 | `LLM_ENDPOINT` | 是 | 基础地址，见上表 endpoint 约定 |
 | `LLM_API_KEY` | 是 | API key（仅在请求中使用，不落盘） |
 | `LLM_LITE_MODEL` | 是 | 规则复核 + 语义去重模型 |
@@ -121,6 +134,8 @@ node examples/run-full-scan.mjs /path/to/skill_dir
 可把这些变量写入项目根目录 `.env`（已加入 `.gitignore`），`set -a; source .env; set +a` 后运行。
 
 程序内直接传 `model` 亦可：`{ provider, endpoint, apiKey, liteModel, proModel, timeoutMs? }`。
+Responses 协议使用 `/responses`，Chat Completions 使用 `/chat/completions`，Anthropic 使用 `/messages`；
+endpoint 已包含对应路径时不会重复追加。
 模型文本须返回严格 JSON；响应会容忍 markdown 代码围栏与前后注释。任一分支失败返回 `partial`
 报告并保留静态结果，`branches` 中标记 failed/skipped。详见导出的 Zod schema。
 
@@ -179,7 +194,7 @@ skill-scanner /path/to/skill_dir --json --output report.json
 | `--mode <quick\|full>` | 扫描模式（默认：配置了模型则 full，否则 quick） |
 | `--quick` | 仅静态扫描 |
 | `--locale <locale>` | `zh-CN` / `en-US` / `ja-JP` / `ko-KR`（默认 `zh-CN`） |
-| `--provider <openai\|anthropic>` | LLM provider |
+| `--provider <openai-responses\|openai-completions\|anthropic>` | LLM 协议（旧值 `openai` 映射为 `openai-completions`） |
 | `--endpoint <url>` | LLM 基础地址 |
 | `--api-key <key>` | LLM API key |
 | `--lite-model <name>` | 规则复核 + 语义去重模型 |

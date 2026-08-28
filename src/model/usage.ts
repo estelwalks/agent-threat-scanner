@@ -41,12 +41,16 @@ export function normalizeModelUsage(body: unknown): NormalizedUsage | undefined 
   }
   const directInput = nonnegativeInt(raw.input_tokens);
   const output = nonnegativeInt(raw.output_tokens);
+  const inputDetails = raw.input_tokens_details && typeof raw.input_tokens_details === "object"
+    ? raw.input_tokens_details as Record<string, unknown> : undefined;
+  const cachedTokens = nonnegativeInt(raw.cached_tokens) ?? nonnegativeInt(inputDetails?.cached_tokens) ?? 0;
   const cacheRead = nonnegativeInt(raw.cache_read_input_tokens) ?? 0;
   const cacheCreation = nonnegativeInt(raw.cache_creation_input_tokens) ?? 0;
-  if (directInput === undefined && output === undefined && cacheRead === 0 && cacheCreation === 0) return undefined;
+  if (directInput === undefined && output === undefined && cachedTokens === 0 && cacheRead === 0 && cacheCreation === 0) return undefined;
   const inputTokens = (directInput ?? 0) + cacheRead + cacheCreation;
   const outputTokens = output ?? 0;
-  return { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens, cachedInputTokens: cacheRead };
+  const reportedTotal = nonnegativeInt(raw.total_tokens);
+  return { inputTokens, outputTokens, totalTokens: reportedTotal ?? inputTokens + outputTokens, cachedInputTokens: cachedTokens + cacheRead };
 }
 
 function statusOf(counters: MutableCounters): TokenUsageBreakdown["status"] {

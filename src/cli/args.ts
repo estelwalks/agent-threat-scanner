@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { LocaleSchema, ProviderSchema, SCAN_MODES } from "../types.js";
+import { LocaleSchema, ProviderSchema, PROVIDERS, SCAN_MODES } from "../types.js";
 import type { LocaleKey, ModelConfig } from "../types.js";
 
 export class UsageError extends Error {}
@@ -88,7 +88,12 @@ function applyValueFlag(out: ParsedArgs, flag: string, value: string): void {
       return;
     }
     case "--locale": out.locale = LocaleSchema.parse(value); return;
-    case "--provider": out.model.provider = ProviderSchema.parse(value); return;
+    case "--provider": {
+      const result = ProviderSchema.safeParse(value);
+      if (!result.success) throw new UsageError(`invalid provider: ${value} (expected ${PROVIDERS.join(", ")})`);
+      out.model.provider = result.data;
+      return;
+    }
     case "--endpoint": out.model.endpoint = value; return;
     case "--api-key": out.model.apiKey = value; return;
     case "--lite-model": out.model.liteModel = value; return;

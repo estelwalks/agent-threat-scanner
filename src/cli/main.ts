@@ -14,7 +14,8 @@ Options:
   --mode <quick|full>           scan mode (default: full if a model is configured, else quick)
   --quick                       static-only scan (same as --mode quick)
   --locale <locale>             zh-CN | en-US | ja-JP | ko-KR (default: zh-CN)
-  --provider <openai|anthropic> LLM provider
+  --provider <openai-responses|openai-completions|anthropic>
+                                LLM protocol (legacy openai maps to openai-completions)
   --endpoint <url>              LLM base URL
   --api-key <key>               LLM API key
   --lite-model <name>           model for rule verification + semantic dedup

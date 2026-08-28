@@ -9,7 +9,7 @@
 Agent Skill 向けのプライバシー保護型セキュリティスキャナ（ESM / TypeScript）。提供されたファイルを実行することも、
 API キーを永続化することもありません。スキャンはデフォルトでプライバシー保護型です：メモリ内の `files`
 （path + content、ディスク I/O なし）を渡すか、ファイル/ディレクトリの `paths` を渡すとスキャナがディスクから読み取ります。
-`quick` モードは静的ルールを実行します。`full` モードでは **OpenAI 互換**または **Anthropic Messages** API による
+`quick` モードは静的ルールを実行します。`full` モードでは **OpenAI Responses**、**OpenAI Chat Completions**、または **Anthropic Messages** API による
 モデルレビューを追加します。API キーはリクエストでのみ使用され、保存も返却もされません。
 
 ```ts
@@ -71,25 +71,39 @@ src/
   i18n/        ローカライズ済みリソース（zh-CN / en-US / ja-JP / ko-KR）
   rules/       76 件の参照ルール + メタデータ（言語非依存）
   detection/   静的スキャン / ファイルレベルチェック / 重複排除 / スコアリング / レポート集計
-  model/       トランスポート（OpenAI/Anthropic）/ エージェントループ / 正規化 / プロンプト
+  model/       トランスポート（OpenAI Responses / Chat Completions / Anthropic）/ エージェントループ / 正規化 / プロンプト
   scanner.ts   オーケストレータ
   types.ts     Zod スキーマ
 ```
 
 ## LLM 設定とテスト（full モード）
 
-`model` は OpenAI と Anthropic の両形式に対応し、`provider`（`"openai" | "anthropic"`）で指定します。
-省略時は endpoint から自動検出：`anthropic`/`claude` を含むか `/messages` で終わる → anthropic、それ以外 → openai。
+`model` は 3 つのプロトコルに対応し、`provider`（`"openai-responses"`、`"openai-completions"`、`"anthropic"`）で指定します。
+旧値 `"openai"` も引き続き使用でき、`"openai-completions"` にマッピングされます。
+省略時は endpoint から自動検出：`anthropic`/`claude` を含むか `/messages` で終わる → anthropic、
+`/responses` で終わる → openai-responses、それ以外 → openai-completions。
 
 | provider | endpoint 規約 | 実際のリクエスト | 認証ヘッダー |
 |---|---|---|---|
-| `openai` | ベース URL（例 `https://api.openai.com/v1`） | `/chat/completions` を追記 | `Authorization: Bearer <key>` |
+| `openai-responses` | ベース URL（例 `https://api.openai.com/v1`） | `/responses` を追記 | `Authorization: Bearer <key>` |
+| `openai-completions` | ベース URL（例 `https://api.openai.com/v1`） | `/chat/completions` を追記 | `Authorization: Bearer <key>` |
 | `anthropic` | `https://api.anthropic.com/v1`（`/v1` は省略可） | `/messages` を追記 | `x-api-key` + `anthropic-version: 2023-06-01` |
+| `openai`（旧値） | `openai-completions` と同じ | `/chat/completions` を追記 | `Authorization: Bearer <key>` |
 
 実行例（`examples/run-full-scan.mjs` が環境変数を読み、`model` を組み立て、ディレクトリに対して full スキャンを実行）：
 
 ```bash
-# OpenAI 互換（OpenAI / DeepSeek / vLLM / Ollama ...）
+# OpenAI Responses
+LLM_PROVIDER=openai-responses LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
+LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
+node examples/run-full-scan.mjs /path/to/skill_dir
+
+# OpenAI Chat Completions 互換（OpenAI / DeepSeek / vLLM / Ollama ...）
+LLM_PROVIDER=openai-completions LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
+LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
+node examples/run-full-scan.mjs /path/to/skill_dir
+
+# LLM_PROVIDER を省略すると openai-completions を使用
 LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
 LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
 node examples/run-full-scan.mjs /path/to/skill_dir
@@ -104,7 +118,7 @@ node examples/run-full-scan.mjs /path/to/skill_dir
 
 | 変数 | 必須 | 説明 |
 |---|---|---|
-| `LLM_PROVIDER` | いいえ | `openai` / `anthropic`；省略時は endpoint から自動検出 |
+| `LLM_PROVIDER` | いいえ | `openai-responses` / `openai-completions` / `anthropic`；旧値 `openai` は `openai-completions` にマッピング。省略時は endpoint から自動検出 |
 | `LLM_ENDPOINT` | はい | ベース URL（上記 endpoint 規約を参照） |
 | `LLM_API_KEY` | はい | API キー（リクエストでのみ使用、保存されない） |
 | `LLM_LITE_MODEL` | はい | ルール検証 + 意味的重複排除用モデル |
@@ -118,6 +132,7 @@ node examples/run-full-scan.mjs /path/to/skill_dir
 `set -a; source .env; set +a` の後に実行することもできます。
 
 コード内で `model` を直接渡すことも可能：`{ provider, endpoint, apiKey, liteModel, proModel, timeoutMs? }`。
+Responses は `/responses`、Chat Completions は `/chat/completions`、Anthropic は `/messages` を使用し、endpoint に既にパスがあれば二重に追加しません。
 モデルの出力は厳密な JSON である必要があります。レスポンスはマークダウンのコードフェンスと前後のコメントを許容します。
 いずれかのブランチが失敗すると、静的結果を保持した `partial` レポートが返され、`branches` に failed/skipped が記録されます。
 詳細はエクスポートされた Zod スキーマを参照してください。
@@ -178,7 +193,7 @@ skill-scanner /path/to/skill_dir --json --output report.json
 | `--mode <quick\|full>` | スキャンモード（デフォルト：モデル設定があれば full、なければ quick） |
 | `--quick` | 静的スキャンのみ |
 | `--locale <locale>` | `zh-CN` / `en-US` / `ja-JP` / `ko-KR`（デフォルト `zh-CN`） |
-| `--provider <openai\|anthropic>` | LLM プロバイダー |
+| `--provider <openai-responses\|openai-completions\|anthropic>` | LLM プロトコル（旧値 `openai` は `openai-completions` にマッピング） |
 | `--endpoint <url>` | LLM ベース URL |
 | `--api-key <key>` | LLM API キー |
 | `--lite-model <name>` | ルール検証 + 意味的重複排除用モデル |

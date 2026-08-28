@@ -10,7 +10,8 @@ export const SEVERITIES = ["critical", "high", "medium", "low"] as const;
 export const SCAN_MODES = ["quick", "full"] as const;
 export const SCAN_STATUSES = ["complete", "partial"] as const;
 export const BRANCH_STATUSES = ["complete", "skipped", "failed"] as const;
-export const PROVIDERS = ["openai", "anthropic"] as const;
+/** Supported model protocols. `openai` is retained as a legacy alias for `openai-completions`. */
+export const PROVIDERS = ["openai-responses", "openai-completions", "anthropic", "openai"] as const;
 export const THREAT_LEVELS = ["critical", "high", "medium", "low", "none"] as const;
 /** Deduction-based scoring: severity weights applied to model findings (static rules use their own weight). */
 export const LLM_SEVERITY_WEIGHTS = { critical: 45, high: 35, medium: 25, low: 10 } as const;
@@ -29,9 +30,9 @@ export const SkillFileSchema = z.object({
 }).strict();
 export type SkillFile = z.infer<typeof SkillFileSchema>;
 export const ModelConfigSchema = z.object({
-  /** API protocol; when omitted, auto-detected from the endpoint (contains anthropic/claude or ends with /messages → anthropic, otherwise openai). */
+  /** API protocol; `openai` is the legacy alias for `openai-completions`. When omitted, the endpoint is inspected. */
   provider: ProviderSchema.optional(),
-  /** API base URL: for OpenAI-compatible it is https://host/v1 (appends /chat/completions); for Anthropic it is https://api.anthropic.com/v1 (appends /messages). */
+  /** API base URL: protocol-specific paths are appended when the endpoint is not already a complete API path. */
   endpoint: z.string().url().max(2048),
   apiKey: z.string().min(1).max(8192),
   liteModel: z.string().min(1).max(256),

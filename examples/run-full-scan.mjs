@@ -3,7 +3,12 @@
 // This script is a HOST of the library (it reads disk content into memory); the library itself
 // stays in-memory and never opens paths on its own.
 //
-// OpenAI-compatible (OpenAI / DeepSeek / vLLM / Ollama ... endpoint = base URL, /chat/completions appended):
+// OpenAI Responses (endpoint = base URL, /responses appended):
+//   LLM_PROVIDER=openai-responses LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
+//   LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
+//   node examples/run-full-scan.mjs /path/to/skill_dir
+//
+// OpenAI-compatible Chat Completions (OpenAI / DeepSeek / vLLM / Ollama ... endpoint = base URL, /chat/completions appended):
 //   LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
 //   LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
 //   node examples/run-full-scan.mjs /path/to/skill_dir

@@ -10,7 +10,7 @@ Private development package for an ESM TypeScript Skill security scanner. It nev
 supplied files and never persists API keys. Scanning is privacy-preserving by default: pass
 in-memory `files` (path + content — no disk I/O), or pass file/directory `paths` and the
 scanner reads them from disk. `quick` runs static rules; `full` adds optional model review
-via the **OpenAI-compatible** or **Anthropic Messages** API.
+via the **OpenAI Responses**, **OpenAI Chat Completions**, or **Anthropic Messages** API.
 
 ```ts
 import { scanSkill } from "skill-scanner";
@@ -85,27 +85,40 @@ src/
   i18n/        Localized resources (zh-CN / en-US / ja-JP / ko-KR)
   rules/       76 reference rules + metadata (language-independent)
   detection/   Static scan / file-level checks / dedup / scoring / report aggregation
-  model/       Transport (OpenAI/Anthropic) / Agent loop / normalization / prompts
+  model/       Transport (OpenAI Responses / Chat Completions / Anthropic) / Agent loop / normalization / prompts
   scanner.ts   Orchestrator
   types.ts     Zod schemas
 ```
 
 ## LLM configuration & testing (full mode)
 
-`model` supports both OpenAI and Anthropic formats, selected via `provider` (`"openai" | "anthropic"`).
-When omitted it is auto-detected from the endpoint: containing `anthropic`/`claude` or ending in
-`/messages` → anthropic, otherwise openai.
+`model` supports three protocols, selected via `provider`: `"openai-responses"`,
+`"openai-completions"`, or `"anthropic"`. The legacy value `"openai"` remains supported and maps to
+`"openai-completions"`. When omitted, the endpoint is inspected: containing `anthropic`/`claude` or
+ending in `/messages` → anthropic, ending in `/responses` → openai-responses, otherwise → openai-completions.
 
 | provider | endpoint convention | actual request | auth header |
 |---|---|---|---|
-| `openai` | base URL, e.g. `https://api.openai.com/v1` | appends `/chat/completions` | `Authorization: Bearer <key>` |
+| `openai-responses` | base URL, e.g. `https://api.openai.com/v1` | appends `/responses` | `Authorization: Bearer <key>` |
+| `openai-completions` | base URL, e.g. `https://api.openai.com/v1` | appends `/chat/completions` | `Authorization: Bearer <key>` |
 | `anthropic` | `https://api.anthropic.com/v1` (or omit `/v1`) | appends `/messages` | `x-api-key` + `anthropic-version: 2023-06-01` |
+| `openai` (legacy) | same as `openai-completions` | appends `/chat/completions` | `Authorization: Bearer <key>` |
 
 Example run (`examples/run-full-scan.mjs` reads environment variables, builds `model`, and runs a
 full scan over a directory):
 
 ```bash
-# OpenAI-compatible (OpenAI / DeepSeek / vLLM / Ollama ...)
+# OpenAI Responses
+LLM_PROVIDER=openai-responses LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
+LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
+node examples/run-full-scan.mjs /path/to/skill_dir
+
+# OpenAI Chat Completions compatible (OpenAI / DeepSeek / vLLM / Ollama ...)
+LLM_PROVIDER=openai-completions LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
+LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
+node examples/run-full-scan.mjs /path/to/skill_dir
+
+# If LLM_PROVIDER is omitted, openai-completions is used by default
 LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
 LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
 node examples/run-full-scan.mjs /path/to/skill_dir
@@ -120,7 +133,7 @@ Supported environment variables:
 
 | Variable | Required | Description |
 |---|---|---|
-| `LLM_PROVIDER` | no | `openai` / `anthropic`; auto-detected from endpoint when omitted |
+| `LLM_PROVIDER` | no | `openai-responses` / `openai-completions` / `anthropic`; legacy `openai` maps to `openai-completions`; auto-detected when omitted |
 | `LLM_ENDPOINT` | yes | base URL, see endpoint conventions above |
 | `LLM_API_KEY` | yes | API key (used only in the request, never persisted) |
 | `LLM_LITE_MODEL` | yes | model for rule verification + semantic dedup |
@@ -134,6 +147,8 @@ You can also write these variables to a `.env` file in the project root (already
 `set -a; source .env; set +a` first.
 
 Passing `model` directly in code also works: `{ provider, endpoint, apiKey, liteModel, proModel, timeoutMs? }`.
+Responses uses `/responses`, Chat Completions uses `/chat/completions`, and Anthropic uses `/messages`;
+the path is not appended twice when the endpoint already includes it.
 Model output must be strict JSON; responses tolerate markdown code fences and surrounding comment text.
 If any branch fails, a `partial` report is returned with static results preserved and the branch marked
 failed/skipped in `branches`. See the exported Zod schemas for details.
@@ -195,7 +210,7 @@ Options:
 | `--mode <quick\|full>` | scan mode (default: full if a model is configured, else quick) |
 | `--quick` | static-only scan |
 | `--locale <locale>` | `zh-CN` / `en-US` / `ja-JP` / `ko-KR` (default `zh-CN`) |
-| `--provider <openai\|anthropic>` | LLM provider |
+| `--provider <openai-responses\|openai-completions\|anthropic>` | LLM protocol (legacy `openai` maps to `openai-completions`) |
 | `--endpoint <url>` | LLM base URL |
 | `--api-key <key>` | LLM API key |
 | `--lite-model <name>` | model for rule verification + semantic dedup |

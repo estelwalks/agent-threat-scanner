@@ -9,7 +9,7 @@
 Agent Skill용 프라이버시 보호형 보안 스캐너(ESM / TypeScript). 제공된 파일을 실행하지도 않고, API 키를 영속화하지도 않습니다.
 스캔은 기본적으로 프라이버시 보호 방식입니다: 메모리 내 `files`(path + content, 디스크 I/O 없음)를 전달하거나,
 파일/디렉터리 `paths`를 전달하면 스캐너가 디스크에서 읽어들입니다.
-`quick` 모드는 정적 규칙을 실행합니다. `full` 모드에서는 **OpenAI 호환** 또는 **Anthropic Messages** API를 통한 모델 검토를 추가합니다.
+`quick` 모드는 정적 규칙을 실행합니다. `full` 모드에서는 **OpenAI Responses**, **OpenAI Chat Completions** 또는 **Anthropic Messages** API를 통한 모델 검토를 추가합니다.
 API 키는 요청에서만 사용되며, 저장되거나 반환되지 않습니다.
 
 ```ts
@@ -70,25 +70,39 @@ src/
   i18n/        로컬라이즈 리소스(zh-CN / en-US / ja-JP / ko-KR)
   rules/       76개 참조 규칙 + 메타데이터(언어 무관)
   detection/   정적 스캔 / 파일 레벨 검사 / 중복 제거 / 점수 산정 / 보고서 집계
-  model/       전송 계층(OpenAI/Anthropic) / 에이전트 루프 / 정규화 / 프롬프트
+  model/       전송 계층(OpenAI Responses / Chat Completions / Anthropic) / 에이전트 루프 / 정규화 / 프롬프트
   scanner.ts   오케스트레이터
   types.ts     Zod 스키마
 ```
 
 ## LLM 구성 및 테스트(full 모드)
 
-`model`은 OpenAI와 Anthropic 두 형식을 모두 지원하며, `provider`(`"openai" | "anthropic"`)로 지정합니다.
-생략 시 endpoint에서 자동 감지합니다. `anthropic`/`claude`를 포함하거나 `/messages`로 끝나면 → anthropic, 그 외 → openai.
+`model`은 세 가지 프로토콜을 지원하며 `provider`(`"openai-responses"`, `"openai-completions"`, `"anthropic"`)로 지정합니다.
+기존 값 `"openai"`도 계속 사용할 수 있으며 `"openai-completions"`로 매핑됩니다.
+생략 시 endpoint에서 자동 감지합니다. `anthropic`/`claude`를 포함하거나 `/messages`로 끝나면 → anthropic,
+`/responses`로 끝나면 → openai-responses, 그 외 → openai-completions입니다.
 
 | provider | endpoint 규약 | 실제 요청 | 인증 헤더 |
 |---|---|---|---|
-| `openai` | 베이스 URL(예: `https://api.openai.com/v1`) | `/chat/completions` 추가 | `Authorization: Bearer <key>` |
+| `openai-responses` | 베이스 URL(예: `https://api.openai.com/v1`) | `/responses` 추가 | `Authorization: Bearer <key>` |
+| `openai-completions` | 베이스 URL(예: `https://api.openai.com/v1`) | `/chat/completions` 추가 | `Authorization: Bearer <key>` |
 | `anthropic` | `https://api.anthropic.com/v1`(`/v1` 생략 가능) | `/messages` 추가 | `x-api-key` + `anthropic-version: 2023-06-01` |
+| `openai`(기존 값) | `openai-completions`와 동일 | `/chat/completions` 추가 | `Authorization: Bearer <key>` |
 
 실행 예시(`examples/run-full-scan.mjs`가 환경 변수를 읽고 `model`을 구성한 뒤 디렉터리를 full 스캔):
 
 ```bash
-# OpenAI 호환(OpenAI / DeepSeek / vLLM / Ollama ...)
+# OpenAI Responses
+LLM_PROVIDER=openai-responses LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
+LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
+node examples/run-full-scan.mjs /path/to/skill_dir
+
+# OpenAI Chat Completions 호환(OpenAI / DeepSeek / vLLM / Ollama ...)
+LLM_PROVIDER=openai-completions LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
+LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
+node examples/run-full-scan.mjs /path/to/skill_dir
+
+# LLM_PROVIDER를 생략하면 openai-completions를 기본으로 사용
 LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
 LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
 node examples/run-full-scan.mjs /path/to/skill_dir
@@ -103,7 +117,7 @@ node examples/run-full-scan.mjs /path/to/skill_dir
 
 | 변수 | 필수 | 설명 |
 |---|---|---|
-| `LLM_PROVIDER` | 아니오 | `openai` / `anthropic`; 생략 시 endpoint에서 자동 감지 |
+| `LLM_PROVIDER` | 아니오 | `openai-responses` / `openai-completions` / `anthropic`; 기존 `openai`는 `openai-completions`로 매핑; 생략 시 endpoint에서 자동 감지 |
 | `LLM_ENDPOINT` | 예 | 베이스 URL(위 endpoint 규약 참조) |
 | `LLM_API_KEY` | 예 | API 키(요청에서만 사용, 저장되지 않음) |
 | `LLM_LITE_MODEL` | 예 | 규칙 검증 + 의미론적 중복 제거용 모델 |
@@ -117,6 +131,7 @@ node examples/run-full-scan.mjs /path/to/skill_dir
 `set -a; source .env; set +a` 후 실행할 수도 있습니다.
 
 코드에서 `model`을 직접 전달할 수도 있습니다: `{ provider, endpoint, apiKey, liteModel, proModel, timeoutMs? }`.
+Responses는 `/responses`, Chat Completions은 `/chat/completions`, Anthropic은 `/messages`를 사용하며 endpoint에 해당 경로가 이미 있으면 중복으로 추가하지 않습니다.
 모델 출력은 엄격한 JSON이어야 합니다. 응답은 마크다운 코드 펜스와 앞뒤 주석을 허용합니다.
 어느 분기가 실패하면 정적 결과를 보존한 `partial` 보고서가 반환되고 `branches`에 failed/skipped가 기록됩니다.
 자세한 내용은 내보내진 Zod 스키마를 참조하세요.
@@ -177,7 +192,7 @@ skill-scanner /path/to/skill_dir --json --output report.json
 | `--mode <quick\|full>` | 스캔 모드(기본: 모델이 구성되면 full, 아니면 quick) |
 | `--quick` | 정적 스캔만 |
 | `--locale <locale>` | `zh-CN` / `en-US` / `ja-JP` / `ko-KR`(기본 `zh-CN`) |
-| `--provider <openai\|anthropic>` | LLM 프로바이더 |
+| `--provider <openai-responses\|openai-completions\|anthropic>` | LLM 프로토콜(기존 `openai`는 `openai-completions`로 매핑) |
 | `--endpoint <url>` | LLM 베이스 URL |
 | `--api-key <key>` | LLM API 키 |
 | `--lite-model <name>` | 규칙 검증 + 의미론적 중복 제거용 모델 |

@@ -25,7 +25,8 @@ const ConfigFileSchema = z.object({
   model: ModelConfigSchema.partial().optional(),
 }).strict();
 
-/** Mirrors examples/run-full-scan.mjs: maps LLM_* env vars onto a partial model config. */
+/** Mirrors examples/run-full-scan.mjs: maps LLM_* env vars onto a partial model config.
+ * LLM_PROVIDER accepts openai-responses, openai-completions, anthropic, and the legacy openai alias. */
 export function envModel(env: NodeJS.ProcessEnv): Partial<ModelConfig> {
   const m: Partial<ModelConfig> = {};
   if (env.LLM_PROVIDER) { const r = ProviderSchema.safeParse(env.LLM_PROVIDER); if (r.success) m.provider = r.data; }
