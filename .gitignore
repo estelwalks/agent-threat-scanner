@@ -9,3 +9,21 @@ examples/samples/category-report.json
 .env.*
 !.env.example
 .skill-scanner.json
+
+# local IDE and OS files
+.claude/settings.local.json
+.DS_Store
+
+# local logs and credential material
+*.log
+logs/
+*.pem
+*.key
+*.crt
+*.cer
+*.csr
+*.der
+*.p12
+*.pfx
+*.jks
+*.keystore

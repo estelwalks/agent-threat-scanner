@@ -24,7 +24,7 @@ const maxAgentTurnsSchema = z.coerce.number().int().min(1).max(100);
 
 const VALUE_FLAGS = new Set([
   "--config", "--mode", "--locale", "--output",
-  "--provider", "--endpoint", "--api-key", "--lite-model", "--pro-model",
+  "--provider", "--endpoint", "--lite-model", "--pro-model",
   "--timeout-ms", "--context-window-tokens", "--max-agent-turns",
 ]);
 
@@ -46,6 +46,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
     const flag = eq >= 0 ? token.slice(0, eq) : token;
     const inline = eq >= 0 ? token.slice(eq + 1) : undefined;
     if (!flag.startsWith("--")) throw new UsageError(`unknown flag: ${token}`);
+    if (flag === "--api-key") {
+      throw new UsageError("deprecated flag --api-key is not supported; use the LLM_API_KEY environment variable or model.apiKey in a config file");
+    }
     if (flag === "--help" || flag === "--version" || flag === "--quick" || flag === "--json" || flag === "--verbose") {
       if (inline !== undefined) throw new UsageError(`flag ${flag} does not take a value`);
       if (flag === "--help") out.help = true;
@@ -95,7 +98,6 @@ function applyValueFlag(out: ParsedArgs, flag: string, value: string): void {
       return;
     }
     case "--endpoint": out.model.endpoint = value; return;
-    case "--api-key": out.model.apiKey = value; return;
     case "--lite-model": out.model.liteModel = value; return;
     case "--pro-model": out.model.proModel = value; return;
     case "--timeout-ms": out.model.timeoutMs = timeoutSchema.parse(value); return;

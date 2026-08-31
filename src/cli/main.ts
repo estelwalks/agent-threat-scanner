@@ -17,7 +17,6 @@ Options:
   --provider <openai-responses|openai-completions|anthropic>
                                 LLM protocol (legacy openai maps to openai-completions)
   --endpoint <url>              LLM base URL
-  --api-key <key>               LLM API key
   --lite-model <name>           model for rule verification + semantic dedup
   --pro-model <name>            model for single/cross-file behavioral analysis
   --timeout-ms <ms>             per-call model timeout (default: 120000)
@@ -38,6 +37,19 @@ export interface MainIO {
   fetch?: FetchLike;
 }
 
+/** Replaces configured credentials in user-visible CLI text without changing the report object. */
+function redactSecrets(value: string, secrets: Iterable<string>): string {
+  let redacted = value;
+  for (const secret of secrets) {
+    if (secret.length > 0) redacted = redacted.split(secret).join("[REDACTED]");
+  }
+  return redacted;
+}
+
+function errorText(error: unknown, secrets: Iterable<string>): string {
+  return redactSecrets(error instanceof Error ? error.message : String(error), secrets);
+}
+
 export async function main(argv: string[], io: MainIO = {}): Promise<number> {
   let args;
   try { args = parseArgs(argv); }
@@ -51,10 +63,14 @@ export async function main(argv: string[], io: MainIO = {}): Promise<number> {
 
   const cwd = io.cwd ?? process.cwd();
   const env = { ...(io.env ?? process.env) };
+  const secrets = new Set<string>();
+  if (env.LLM_API_KEY) secrets.add(env.LLM_API_KEY);
   loadDotEnv(env, cwd);
+  if (env.LLM_API_KEY) secrets.add(env.LLM_API_KEY);
   let config;
   try { config = loadConfig(args, env, cwd); }
-  catch (error) { console.error(`error: ${(error as Error).message}`); return 1; }
+  catch (error) { console.error(`error: ${errorText(error, secrets)}`); return 1; }
+  if (config.model?.apiKey) secrets.add(config.model.apiKey);
 
   if (args.verbose) {
     console.error(`[skill-scanner] config: mode=${config.mode} locale=${config.locale}${config.model ? ` provider=${config.model.provider ?? "auto"} lite=${config.model.liteModel} pro=${config.model.proModel}` : " (no model configured)"}`);
@@ -72,14 +88,14 @@ export async function main(argv: string[], io: MainIO = {}): Promise<number> {
       ...(args.verbose ? { log: (message: string) => console.error(`[skill-scanner] ${message}`) } : {}),
     });
   } catch (error) {
-    console.error(`error: ${(error as Error).message}`);
+    console.error(`error: ${errorText(error, secrets)}`);
     return 1;
   }
   if (args.verbose) console.error(`[skill-scanner] scan completed in ${Math.round(performance.now() - started)}ms`);
 
-  const text = args.json ? renderJson(report) : renderSummary(report);
+  const text = redactSecrets(args.json ? renderJson(report) : renderSummary(report), secrets);
   if (args.output) {
-    try { writeOutput(args.output, text); } catch (error) { console.error(`error: ${(error as Error).message}`); return 1; }
+    try { writeOutput(args.output, text); } catch (error) { console.error(`error: ${errorText(error, secrets)}`); return 1; }
     console.error(`Report written to ${args.output}`);
   } else {
     console.log(text);

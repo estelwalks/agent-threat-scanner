@@ -21,11 +21,17 @@ describe("parseArgs", () => {
     expect(args.verbose).toBe(true);
   });
   it("supports --flag=value and kebab-case model flags", () => {
-    const args = parseArgs(["--endpoint=https://x/v1", "--api-key", "sk", "--timeout-ms=5000", "--locale", "en-US"]);
+    const args = parseArgs(["--endpoint=https://x/v1", "--timeout-ms=5000", "--locale", "en-US"]);
     expect(args.model.endpoint).toBe("https://x/v1");
-    expect(args.model.apiKey).toBe("sk");
+    expect(args.model.apiKey).toBeUndefined();
     expect(args.model.timeoutMs).toBe(5000);
     expect(args.locale).toBe("en-US");
+  });
+  it("rejects the deprecated --api-key flag without echoing its value", () => {
+    const secret = "sk-cli-should-not-leak-1234567890";
+    expect(() => parseArgs(["--api-key", secret])).toThrow("deprecated flag --api-key is not supported");
+    expect(() => parseArgs([`--api-key=${secret}`])).toThrow("deprecated flag --api-key is not supported");
+    try { parseArgs(["--api-key", secret]); } catch (error) { expect((error as Error).message).not.toContain(secret); }
   });
   it("throws UsageError for unknown flags, extra positionals, missing values and invalid enums", () => {
     expect(() => parseArgs(["--nope"])).toThrow(UsageError);
@@ -256,6 +262,16 @@ describe("main", () => {
   it("returns 1 on an unknown flag and a missing path", async () => {
     expect(await main(["--bogus"], { env: {}, cwd: "/tmp" })).toBe(1);
     expect(await main([], { env: {}, cwd: "/tmp" })).toBe(1);
+  });
+  it("rejects --api-key without exposing the supplied key in CLI errors", async () => {
+    const secret = "sk-cli-main-should-not-leak-1234567890";
+    const errors: string[] = [];
+    const errorSpy = vi.spyOn(console, "error").mockImplementation((...args) => { errors.push(args.join(" ")); });
+    try {
+      expect(await main(["/tmp", "--api-key", secret], { env: {}, cwd: "/tmp" })).toBe(1);
+      expect(errors.join("\n")).toContain("deprecated flag --api-key is not supported");
+      expect(errors.join("\n")).not.toContain(secret);
+    } finally { errorSpy.mockRestore(); }
   });
   it("auto-loads .env and selects full mode with an injected fetch", async () => {
     const dir = mkdtempSync(join(tmpdir(), "skill-scanner-cli-"));
