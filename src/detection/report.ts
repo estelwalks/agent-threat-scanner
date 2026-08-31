@@ -6,7 +6,15 @@ import type { Finding, LocaleKey, ScanSkillReport, SkillFile } from "../types.js
 import type { BehavioralRiskItem } from "../model/client.js";
 
 /** Normalizes raw behavioral-model findings into Finding (category/severity mapped to slugs, bilingual copy picked by locale). */
-export function asFindings(items: BehavioralRiskItem[], files: SkillFile[], phase: string, locale: LocaleKey, fileHashes: ReadonlyMap<string, string> = new Map()): Finding[] {
+export function asFindings(
+  items: BehavioralRiskItem[],
+  files: SkillFile[],
+  phase: string,
+  locale: LocaleKey,
+  fileHashes: ReadonlyMap<string, string> = new Map(),
+  /** Maps the model's relative path view back to the report's disk paths. */
+  modelPathToReportPath?: ReadonlyMap<string, string>,
+): Finding[] {
   const m = getMessages(locale);
   const validPaths = new Set(files.map((file) => file.path)); const fallback = files[0]?.path ?? "SKILL.md";
   const zh = locale === "zh-CN";
@@ -16,7 +24,15 @@ export function asFindings(items: BehavioralRiskItem[], files: SkillFile[], phas
     const kind = normalizeKind(item.category);
     if (!kind) continue;
     const severity = normalizeSeverity(item.severity);
-    const path = item.file_path ? (validPaths.has(item.file_path) ? item.file_path : null) : fallback;
+    const mappedPath = modelPathToReportPath?.get(item.file_path);
+    // Disk-input models receive only relative aliases, but accept a valid
+    // absolute path in a response for compatibility with existing callers and
+    // deterministic integrations that used the pre-alias protocol. This does
+    // not re-enable I/O or expose the path in any outbound request.
+    const candidatePath = modelPathToReportPath
+      ? mappedPath ?? (validPaths.has(item.file_path) ? item.file_path : undefined)
+      : item.file_path;
+    const path = item.file_path ? (candidatePath && validPaths.has(candidatePath) ? candidatePath : null) : fallback;
     if (!path) continue; // finding names a non-scanned file (e.g. the bundled attack-pattern library) → drop
     const fileHash = fileHashes.get(path);
     output.push({

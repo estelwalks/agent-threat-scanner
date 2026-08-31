@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -42,6 +42,60 @@ describe("collectPaths", () => {
     });
     expect(out.skipped.map((s) => s.reason)).toContain("binary file was not scanned");
     expect(out.skipped.map((s) => s.reason)).toContain("content exceeds 2,000,000 char limit");
+  });
+
+  it("does not follow symlink files or directories", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "skill-scanner-outside-"));
+    try {
+      const secret = join(outside, "secret.txt");
+      writeFileSync(secret, "AKIAABCDEFGHIJKLMNOP");
+      mkdirSync(join(dir, "nested"));
+      writeFileSync(join(dir, "SKILL.md"), "safe");
+      symlinkSync(secret, join(dir, "linked.txt"));
+      symlinkSync(outside, join(dir, "linked-dir"), "dir");
+
+      const out = await collectPaths([dir]);
+      expect(out.files.map((file) => file.path)).not.toContain(resolve(secret));
+      expect(out.files.map((file) => file.content)).not.toContain("AKIAABCDEFGHIJKLMNOP");
+      expect(out.skipped).toEqual(expect.arrayContaining([
+        { path: resolve(join(dir, "linked.txt")), reason: "symbolic link was not scanned" },
+        { path: resolve(join(dir, "linked-dir")), reason: "symbolic link was not scanned" },
+      ]));
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a symlink scan entry as skipped without reading its target", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "skill-scanner-outside-entry-"));
+    try {
+      const secret = join(outside, "secret.txt");
+      writeFileSync(secret, "AKIAABCDEFGHIJKLMNOP");
+      const entry = join(dir, "entry.txt");
+      symlinkSync(secret, entry);
+      const out = await collectPaths([entry]);
+      expect(out.files).toEqual([]);
+      expect(out.excludedFiles).toEqual([]);
+      expect(out.skipped).toEqual([{ path: resolve(entry), reason: "symbolic link was not scanned" }]);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("bounds reads of sparse files larger than the content cap", async () => {
+    const sparse = join(dir, "sparse.bin");
+    writeFileSync(sparse, "");
+    truncateSync(sparse, MAX_FILE_CONTENT_CHARS * 4 + 1);
+    const out = await collectPaths([sparse]);
+    expect(out.files).toHaveLength(1);
+    expect(out.files[0]).toMatchObject({ path: resolve(sparse), byteSize: MAX_FILE_CONTENT_CHARS * 4 + 1 });
+    expect(out.skipped).toContainEqual({ path: resolve(sparse), reason: "binary file was not scanned" });
+  });
+
+  it.skipIf(process.platform === "win32")("reports special files as skipped without opening them", async () => {
+    const out = await collectPaths(["/dev/null"]);
+    expect(out.files).toEqual([]);
+    expect(out.skipped).toContainEqual({ path: "/dev/null", reason: "special file was not scanned" });
   });
 
   it("skips duplicate paths passed more than once", async () => {

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { basename } from "node:path";
+import { basename, relative, resolve, sep } from "node:path";
 import { ENGINE_VERSION, RULES_VERSION } from "./rules/index.js";
 import { staticScan } from "./detection/staticScan.js";
 import { fileLevelScan } from "./detection/fileChecks.js";
@@ -44,6 +44,51 @@ function hashFile(file: { path: string; content: string }): string {
   return hash.digest("hex");
 }
 
+interface ModelPathView {
+  files: SkillFile[];
+  /** Model-relative path → report path. Undefined means the input was already in-memory. */
+  modelPathToReportPath?: ReadonlyMap<string, string>;
+  pathForModel: (path: string) => string;
+}
+
+function commonPath(paths: string[]): string {
+  if (paths.length === 0) return resolve(".");
+  const parts = paths.map((path) => resolve(path).split(sep));
+  const prefix: string[] = [];
+  for (let index = 0; ; index++) {
+    const value = parts[0]?.[index];
+    if (value === undefined || parts.some((items) => items[index] !== value)) break;
+    prefix.push(value);
+  }
+  if (prefix.length === 0) return resolve(sep);
+  // On POSIX the leading empty component represents `/`; on Windows this still
+  // produces a usable absolute root for the paths accepted by collectPaths.
+  const root = prefix.join(sep) || sep;
+  return resolve(root);
+}
+
+/** Builds a model-only relative path view while preserving absolute report paths. */
+function buildModelPathView(files: SkillFile[], modelRoots: string[], diskInput: boolean): ModelPathView {
+  if (!diskInput) return { files, pathForModel: (path) => path };
+  const root = commonPath(modelRoots);
+  const reportToModel = new Map<string, string>();
+  const modelToReport = new Map<string, string>();
+  for (const file of files) {
+    const modelPath = relative(root, file.path).split(sep).join("/") || basename(file.path);
+    // A collision is possible only when multiple roots are identical aliases;
+    // retain the first path so a model cannot select an ambiguous report path.
+    if (!modelToReport.has(modelPath)) {
+      modelToReport.set(modelPath, file.path);
+      reportToModel.set(file.path, modelPath);
+    }
+  }
+  return {
+    files: files.map((file) => ({ ...file, path: reportToModel.get(file.path) ?? basename(file.path) })),
+    modelPathToReportPath: modelToReport,
+    pathForModel: (path) => path === "." ? "." : reportToModel.get(path) ?? basename(path),
+  };
+}
+
 /** Scans in-memory `files` or disk `paths`; it never persists API keys or executes Skill code. */
 export async function scanSkill(input: unknown, dependencies: ScanDependencies = {}): Promise<ScanSkillReport> {
   const request = ScanSkillRequestSchema.parse(input);
@@ -59,6 +104,7 @@ export async function scanSkill(input: unknown, dependencies: ScanDependencies =
         excludedFiles: [] as SkillFile[],
         analysisPaths: request.files.map((file) => file.path),
         singleSkillFile: request.files.length === 1 && !request.files[0].isBinary && basename(request.files[0].path) === "SKILL.md",
+        modelRoots: [] as string[],
         skipped: [] as ScanSkillReport["skippedFiles"],
       }
     : await collectPaths(request.paths!);
@@ -66,6 +112,7 @@ export async function scanSkill(input: unknown, dependencies: ScanDependencies =
   const validated = validateFiles(diskInput.files, Boolean(request.files), Boolean(request.paths));
   const analysisPaths = new Set(diskInput.analysisPaths);
   const files = validated.files.filter((file) => analysisPaths.has(file.path));
+  const modelView = buildModelPathView(files, diskInput.modelRoots, Boolean(request.paths));
   const skipped = validated.skipped;
   const allSkipped = [...new Map([...diskInput.skipped, ...skipped].map((item) => [`${item.path}\0${item.reason}`, item])).values()];
   const fileHashes = new Map<string, string>();
@@ -91,7 +138,10 @@ export async function scanSkill(input: unknown, dependencies: ScanDependencies =
           branches.push({ name: "ruleReview", status: "complete" });
         } else {
           try {
-            const ruleReviewList = formatFindingsForVerification(toVerify.map((f) => ({ ruleId: f.ruleId, ruleName: f.ruleName, path: f.path, line: f.line, message: f.message, excerpt: f.excerpt, context: buildContext(files, f.path, f.line) })));
+            const ruleReviewList = formatFindingsForVerification(toVerify.map((f) => {
+              const modelPath = modelView.pathForModel(f.path);
+              return { ruleId: f.ruleId, ruleName: f.ruleName, path: modelPath, line: f.line, message: f.message, excerpt: f.excerpt, context: buildContext(modelView.files, modelPath, f.line) };
+            }));
             const ruleReviewTask = `Please verify each of the following rule hits for whether it is a real risk. The context around each hit (±2 lines) is provided; no file reads are needed. Output strict JSON per the schema.\n\nHit list:\n${ruleReviewList}`;
             const veri = await askModel(fetcher, request.model, request.model.liteModel, ruleReviewTask, "", prompts.shapeVerifications, RuleVerificationSchema, prompts.ruleReview, { collector: usageCollector, context: { model: request.model.liteModel, branch: "ruleReview" } });
             const decisions = new Map(veri.verifications.map((item) => [item.index, item.is_true_positive]));
@@ -106,7 +156,7 @@ export async function scanSkill(input: unknown, dependencies: ScanDependencies =
         const results: Array<{ name: "singleFileAnalysis" | "multiFileAnalysis"; findings?: BehavioralRiskItem[]; error?: string }> = [];
         if (singleSkillFile) {
           branches.push({ name: "multiFileAnalysis", status: "skipped", detail: "single SKILL.md input" });
-          const skillFiles = capFilesForModel(files, request.model);
+            const skillFiles = capFilesForModel(modelView.files, request.model);
           log?.(`singleFileAnalysis: analyzing ${skillFiles.length} file(s) with ${request.model.proModel}`);
           const singleTask = "Perform a behavioral security analysis of the following SKILL content to find security risks that static rules cannot detect. Output strict JSON per the schema; do not use markdown code fences.\nBelow is the content:\n\n";
           try {
@@ -118,7 +168,7 @@ export async function scanSkill(input: unknown, dependencies: ScanDependencies =
         } else {
           branches.push({ name: "singleFileAnalysis", status: "skipped", detail: "multi-file input" });
           log?.(`multiFileAnalysis: running behavioral agent with ${request.model.proModel}`);
-          const agentFiles: SkillFile[] = [...files, { path: ATTACK_PATTERNS_PATH, content: ATTACK_PATTERNS_CONTENT, isBinary: false }];
+          const agentFiles: SkillFile[] = [...modelView.files, { path: ATTACK_PATTERNS_PATH, content: ATTACK_PATTERNS_CONTENT, isBinary: false }];
           const fileListJson = JSON.stringify(agentFiles.map((f) => ({ path: f.path, lineCount: f.content.split(/\r?\n/).length, chars: f.content.length })));
           const multiTask = "Perform a behavioral security analysis of the following SKILL directory content to find security risks that static rules cannot detect. Output strict JSON per the schema; do not use markdown code fences.\nBelow is the full file content:\n\n";
           try {
@@ -126,7 +176,7 @@ export async function scanSkill(input: unknown, dependencies: ScanDependencies =
             try {
               behavioralFindings = await runBehavioralAgent(fetcher, request.model, agentFiles, prompts.agentSystem, prompts.agentTask(fileListJson), usageCollector);
             } catch {
-              const response = await askModel(fetcher, request.model, request.model.proModel, multiTask, formatFilesForPrompt(capFilesForModel(files, request.model)), prompts.shapeFindings, ModelResponseSchema, prompts.multi, { collector: usageCollector, context: { model: request.model.proModel, branch: "multiFileAnalysis" } });
+              const response = await askModel(fetcher, request.model, request.model.proModel, multiTask, formatFilesForPrompt(capFilesForModel(modelView.files, request.model)), prompts.shapeFindings, ModelResponseSchema, prompts.multi, { collector: usageCollector, context: { model: request.model.proModel, branch: "multiFileAnalysis" } });
               behavioralFindings = response.findings;
             }
             results.push({ name: "multiFileAnalysis", findings: behavioralFindings });
@@ -137,7 +187,7 @@ export async function scanSkill(input: unknown, dependencies: ScanDependencies =
         const modelFindings: Finding[] = [];
         for (const result of results) {
           if (result.error) { partial = true; branches.push({ name: result.name, status: "failed", detail: redact(result.error) }); log?.(`${result.name}: failed`); }
-          else { branches.push({ name: result.name, status: "complete" }); modelFindings.push(...asFindings(result.findings ?? [], files, result.name, locale, fileHashes)); log?.(`${result.name}: ${result.findings?.length ?? 0} finding(s)`); }
+          else { branches.push({ name: result.name, status: "complete" }); modelFindings.push(...asFindings(result.findings ?? [], files, result.name, locale, fileHashes, modelView.modelPathToReportPath)); log?.(`${result.name}: ${result.findings?.length ?? 0} finding(s)`); }
         }
         // 3) Location dedup runs within each side before semantic dedup.
         const locationDeduped = dedupByLocation(findings, modelFindings);
@@ -145,7 +195,7 @@ export async function scanSkill(input: unknown, dependencies: ScanDependencies =
         const modelDeduped = locationDeduped.model;
         log?.(`dedup: location dedup kept ${modelDeduped.length} of ${modelFindings.length} model finding(s)`);
         // 4) Semantic dedup compares every retained rule finding against model findings; model wins on overlap.
-        const keptRules = await semanticDedup(fetcher, request.model, verifiedStatic, modelDeduped, usageCollector);
+        const keptRules = await semanticDedup(fetcher, request.model, verifiedStatic, modelDeduped, usageCollector, modelView.pathForModel);
         log?.(`dedup: semantic dedup kept ${keptRules.length} of ${verifiedStatic.length} rule finding(s)`);
         findings = [...keptRules, ...modelDeduped];
       }

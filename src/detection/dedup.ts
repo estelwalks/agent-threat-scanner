@@ -34,13 +34,21 @@ export function dedupModel(modelFindings: Finding[], ruleFindings: Finding[]): F
 const DedupDecisionSchema = z.object({ duplicateRuleIndices: z.array(z.number().int().nonnegative()).max(100) }).strict();
 
 /** LLM semantic dedup: after location dedup, a lite model judges whether a rule hit and a model finding describe the same risk (model wins); on failure, everything is kept. */
-export async function semanticDedup(fetcher: FetchLike, model: ModelConfig, ruleFindings: Finding[], modelFindings: Finding[], usageCollector?: TokenUsageCollector): Promise<Finding[]> {
+export async function semanticDedup(
+  fetcher: FetchLike,
+  model: ModelConfig,
+  ruleFindings: Finding[],
+  modelFindings: Finding[],
+  usageCollector?: TokenUsageCollector,
+  /** Optional disk-input view used only for the model payload; returned findings stay unchanged. */
+  pathForModel?: (path: string) => string,
+): Promise<Finding[]> {
   if (ruleFindings.length === 0 || modelFindings.length === 0) return ruleFindings;
   const prompts = buildModelPrompts();
   try {
     const decision = await askModel(fetcher, model, model.liteModel, prompts.dedup, {
-      primary: modelFindings.map((f, index) => ({ index, kind: f.kind, severity: f.severity, path: f.path, line: f.line, message: f.message })),
-      secondary: ruleFindings.map((f, index) => ({ index, ruleId: f.ruleId, ruleName: f.ruleName, kind: f.kind, path: f.path, line: f.line, message: f.message })),
+      primary: modelFindings.map((f, index) => ({ index, kind: f.kind, severity: f.severity, path: pathForModel?.(f.path) ?? f.path, line: f.line, message: f.message })),
+      secondary: ruleFindings.map((f, index) => ({ index, ruleId: f.ruleId, ruleName: f.ruleName, kind: f.kind, path: pathForModel?.(f.path) ?? f.path, line: f.line, message: f.message })),
     }, prompts.shapeDedup, DedupDecisionSchema, undefined, usageCollector ? { collector: usageCollector, context: { model: model.liteModel, branch: "semanticDedup" } } : undefined);
     const drop = new Set(decision.duplicateRuleIndices);
     return ruleFindings.filter((_, i) => !drop.has(i));

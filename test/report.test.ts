@@ -82,6 +82,15 @@ describe("asFindings", () => {
     const out = asFindings([riskItem()], oneFile, "single", "en-US", hashes);
     expect(out[0]).toMatchObject({ kind: "remote_execution", severity: "high", source: "model", path: "SKILL.md", line: 2, ruleName: "Model finding", kindDisplay: "Remote Code/Command Execution", fileHash: "f".repeat(64), reasoning: "r" });
   });
+  it("maps relative disk aliases and accepts a valid legacy absolute response path", () => {
+    const diskPath = "/tmp/skill-scanner-regression/SKILL.md";
+    const diskFiles: SkillFile[] = [{ path: diskPath, content: "safe", isBinary: false }];
+    const aliases = new Map([["SKILL.md", diskPath]]);
+    const relative = asFindings([riskItem({ file_path: "SKILL.md" })], diskFiles, "single", "en-US", new Map(), aliases);
+    const legacy = asFindings([riskItem({ file_path: diskPath })], diskFiles, "multi", "en-US", new Map(), aliases);
+    expect(relative[0]?.path).toBe(diskPath);
+    expect(legacy[0]?.path).toBe(diskPath);
+  });
   it("uses the Chinese bilingual fields for the zh-CN locale", () => {
     const out = asFindings([riskItem({ description: "en desc", description_zh: "中文描述", remediation: "en fix", remediation_zh: "中文修复" })], oneFile, "single", "zh-CN");
     expect(out[0].message).toBe("中文描述");

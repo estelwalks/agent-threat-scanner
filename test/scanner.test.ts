@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -321,6 +321,23 @@ describe("paths input (file / directory)", () => {
     expect(report.findings).toContainEqual(expect.objectContaining({ ruleId: "RISK_FILE", path: resolve(join(dir, "payload.bin")) }));
   });
 
+  it("reports symlink entries as skipped and never scans their targets", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "skill-scanner-outside-report-"));
+    try {
+      const secret = join(outside, "secret.txt");
+      writeFileSync(secret, "AKIAABCDEFGHIJKLMNOP");
+      writeFileSync(join(dir, "SKILL.md"), "safe");
+      symlinkSync(secret, join(dir, "linked.txt"));
+      const report = await scanSkill({ mode: "quick", paths: [dir] });
+      expect(report.status).toBe("partial");
+      expect(report.skippedFiles).toContainEqual({ path: resolve(join(dir, "linked.txt")), reason: "symbolic link was not scanned" });
+      expect(report.findings).not.toContainEqual(expect.objectContaining({ path: resolve(secret) }));
+      expect(report.findings.some((finding) => finding.ruleId === "AWS_KEY")).toBe(false);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   it("records oversized text files as skipped", async () => {
     writeFileSync(join(dir, "big.md"), "x".repeat(2_000_001));
     const report = await scanSkill({ mode: "quick", paths: [dir] });
@@ -328,6 +345,54 @@ describe("paths input (file / directory)", () => {
     expect(report.skippedFiles).toContainEqual({ path: resolve(join(dir, "big.md")), reason: "content exceeds 2,000,000 char limit" });
     expect(report.scannedFiles).toBe(1);
     expect(report.findings).toContainEqual(expect.objectContaining({ ruleId: "LARGE_SKILL_DIR", path: "." }));
+  });
+
+  it("uses relative paths in every disk model request and maps model findings back", async () => {
+    mkdirSync(join(dir, "scripts"));
+    writeFileSync(join(dir, "SKILL.md"), "AKIAABCDEFGHIJKLMNOP");
+    writeFileSync(join(dir, "scripts", "flow.py"), "eval(input())");
+    const config = { endpoint: "https://model.example/v1", apiKey: "test-key", liteModel: "lite", proModel: "pro", timeoutMs: 1000 };
+    const requests: string[] = [];
+    const openaiReply = (payload: unknown) => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(payload) } }] }), { status: 200 });
+    const fetchMock = async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content: string }> };
+      const user = body.messages.find((message) => message.role === "user")?.content ?? "";
+      requests.push(user);
+      if (user.startsWith("Please verify each of the following rule hits")) return openaiReply({ verifications: [{ index: 0, is_true_positive: true }] });
+      if (user.startsWith("Perform a behavioral security analysis of the following SKILL directory to find")) {
+        return openaiReply({ type: "final", risk_found: true, findings: [{
+          index: 0, category: "data_exfiltration", severity: "medium", file_path: "scripts/flow.py", line_number: 0,
+          name: "agent finding", name_zh: "", description: "model finding", description_zh: "", remediation: "", remediation_zh: "", reasoning: "",
+        }] });
+      }
+      if (user.startsWith("Determine whether rule hits")) return openaiReply({ duplicateRuleIndices: [] });
+      throw new Error(`unexpected model request: ${user.slice(0, 80)}`);
+    };
+    const report = await scanSkill({ mode: "full", locale: "en-US", paths: [dir], model: config }, { fetch: fetchMock });
+    expect(requests.length).toBeGreaterThanOrEqual(3);
+    expect(requests.join("\n")).not.toContain(dir);
+    expect(requests.join("\n")).toContain("SKILL.md");
+    expect(requests.join("\n")).toContain("scripts/flow.py");
+    expect(report.findings).toContainEqual(expect.objectContaining({ source: "model", path: resolve(join(dir, "scripts", "flow.py")) }));
+  });
+
+  it("uses a relative path for single-file disk model input and maps it back", async () => {
+    const skill = join(dir, "SKILL.md");
+    writeFileSync(skill, "safe");
+    const config = { endpoint: "https://model.example/v1", apiKey: "test-key", liteModel: "lite", proModel: "pro", timeoutMs: 1000 };
+    let prompt = "";
+    const fetchMock = async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content: string }> };
+      prompt = body.messages.find((message) => message.role === "user")?.content ?? "";
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ risk_found: true, findings: [{
+        index: 0, category: "network_abuse", severity: "low", file_path: "SKILL.md", line_number: 1,
+        name: "single finding", name_zh: "", description: "single model finding", description_zh: "", remediation: "", remediation_zh: "", reasoning: "",
+      }] }) } }] }), { status: 200 });
+    };
+    const report = await scanSkill({ mode: "full", locale: "en-US", paths: [skill], model: config }, { fetch: fetchMock });
+    expect(prompt).not.toContain(dir);
+    expect(prompt).toContain("### SKILL.md");
+    expect(report.findings).toContainEqual(expect.objectContaining({ source: "model", path: resolve(skill), message: "single model finding" }));
   });
 
   it("uses rule + file hash in ids and returns a fileHash per finding", async () => {
