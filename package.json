@@ -53,5 +53,9 @@
     "tsup": "^8.4.0",
     "typescript": "^5.8.2",
     "vitest": "^3.0.9"
+  },
+  "overrides": {
+    "glob": "10.5.0",
+    "esbuild": "0.28.2"
   }
 }
