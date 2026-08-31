@@ -1,7 +1,7 @@
 {
   "name": "skill-scanner",
   "version": "0.2.0",
-  "private": true,
+  "private": false,
   "description": "Privacy-preserving security scanner for Agent Skills (in-memory files or disk paths)",
   "type": "module",
   "main": "./dist/index.js",
@@ -21,6 +21,7 @@
     "README.en.md",
     "README.ja.md",
     "README.ko.md",
+    ".skill-scanner.example.json",
     "LICENSE",
     "NOTICE"
   ],
@@ -41,6 +42,19 @@
     "electron"
   ],
   "license": "MIT",
+  "author": "l3m0nc9",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/l3m0nc9/skill-scanner.git"
+  },
+  "homepage": "https://github.com/l3m0nc9/skill-scanner#readme",
+  "bugs": {
+    "url": "https://github.com/l3m0nc9/skill-scanner/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
   "dependencies": {
     "zod": "^3.24.2"
   },

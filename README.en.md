@@ -19,6 +19,19 @@ const report = await scanSkill({ mode: "quick", files: [{ path: "SKILL.md", cont
 const reportFromPath = await scanSkill({ mode: "quick", paths: ["/path/to/skill_dir"] });
 ```
 
+## Install and quick start
+
+Node.js 20 or newer is required:
+
+```bash
+npm install skill-scanner
+
+# Run the CLI without a global install
+npx skill-scanner /path/to/skill_dir --quick
+```
+
+The `quick` mode needs no API key. For `full` mode, provide `LLM_API_KEY` (plus the endpoint and model settings) through environment variables; do not put keys in source code or commit them.
+
 ## Detection
 
 - **76 static rules** across **11 risk kinds** (`remote_execution` / `command_injection` /
@@ -212,7 +225,6 @@ Options:
 | `--locale <locale>` | `zh-CN` / `en-US` / `ja-JP` / `ko-KR` (default `zh-CN`) |
 | `--provider <openai-responses\|openai-completions\|anthropic>` | LLM protocol (legacy `openai` maps to `openai-completions`) |
 | `--endpoint <url>` | LLM base URL |
-| `--api-key <key>` | LLM API key |
 | `--lite-model <name>` | model for rule verification + semantic dedup |
 | `--pro-model <name>` | model for single/cross-file behavioral analysis |
 | `--timeout-ms <ms>` | per-call model timeout (default 120000) |

@@ -18,6 +18,19 @@ const report = await scanSkill({ mode: "quick", files: [{ path: "SKILL.md", cont
 const reportFromPath = await scanSkill({ mode: "quick", paths: ["/path/to/skill_dir"] });
 ```
 
+## 安装与快速开始
+
+需要 Node.js 20 或更高版本：
+
+```bash
+npm install skill-scanner
+
+# 无需全局安装，直接运行 CLI
+npx skill-scanner /path/to/skill_dir --quick
+```
+
+`quick` 模式无需 API key；`full` 模式请通过环境变量提供 `LLM_API_KEY`（以及 endpoint 和模型配置），不要把 key 写入源码或提交到仓库。
+
 ## 检测能力
 
 - **76 条静态规则**覆盖 **11 类风险**（`remote_execution` / `command_injection` /
@@ -196,7 +209,6 @@ skill-scanner /path/to/skill_dir --json --output report.json
 | `--locale <locale>` | `zh-CN` / `en-US` / `ja-JP` / `ko-KR`（默认 `zh-CN`） |
 | `--provider <openai-responses\|openai-completions\|anthropic>` | LLM 协议（旧值 `openai` 映射为 `openai-completions`） |
 | `--endpoint <url>` | LLM 基础地址 |
-| `--api-key <key>` | LLM API key |
 | `--lite-model <name>` | 规则复核 + 语义去重模型 |
 | `--pro-model <name>` | 单文件/跨文件行为分析模型 |
 | `--timeout-ms <ms>` | 单次模型调用超时（默认 120000） |

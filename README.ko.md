@@ -19,6 +19,19 @@ const report = await scanSkill({ mode: "quick", files: [{ path: "SKILL.md", cont
 const reportFromPath = await scanSkill({ mode: "quick", paths: ["/path/to/skill_dir"] });
 ```
 
+## 설치 및 빠른 시작
+
+Node.js 20 이상이 필요합니다.
+
+```bash
+npm install skill-scanner
+
+# 전역 설치 없이 CLI 실행
+npx skill-scanner /path/to/skill_dir --quick
+```
+
+`quick` 모드에는 API 키가 필요하지 않습니다. `full` 모드에서는 `LLM_API_KEY`(endpoint 및 모델 설정 포함)를 환경 변수로 제공하고, 키를 소스 코드에 넣거나 커밋하지 마세요.
+
 ## 탐지 기능
 
 - **76개의 정적 규칙**이 **11가지 위험 유형**을 커버(`remote_execution` / `command_injection` /
@@ -194,7 +207,6 @@ skill-scanner /path/to/skill_dir --json --output report.json
 | `--locale <locale>` | `zh-CN` / `en-US` / `ja-JP` / `ko-KR`(기본 `zh-CN`) |
 | `--provider <openai-responses\|openai-completions\|anthropic>` | LLM 프로토콜(기존 `openai`는 `openai-completions`로 매핑) |
 | `--endpoint <url>` | LLM 베이스 URL |
-| `--api-key <key>` | LLM API 키 |
 | `--lite-model <name>` | 규칙 검증 + 의미론적 중복 제거용 모델 |
 | `--pro-model <name>` | 단일/다중 파일 동작 분석용 모델 |
 | `--timeout-ms <ms>` | 호출별 타임아웃(기본 120000) |
