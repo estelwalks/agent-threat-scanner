@@ -52,7 +52,7 @@ const reportFromPath = await scanSkill({ mode: "quick", paths: ["/path/to/skill_
 `kindDisplay`/`severityDisplay`), `rules`(ruleId별로 집계된 정적 발견, `count`와 개별 `matches`),
 `branches`(static/ruleReview/singleFileAnalysis/multiFileAnalysis. complete/skipped/failed),
 `skippedFiles`, `categories`(유형별 건수 / 최고 심각도 / 총 가중치), `threatLevel`, `threatLevelDisplay`,
-`locale`, `contentHash`, `riskScore`가 포함됩니다. 발췌문은 비밀값이 마스킹됩니다. `files` 모드에서는 경로와 콘텐츠가 디스크에서 읽히지 않습니다. `paths` 모드에서는 보고서의 `path`가 디스크의 절대 경로입니다. 각 finding은 `fileHash`(path+content의 SHA-256)를 가지며 `id`는 `ruleId:fileHash:line`로 콘텐츠 주소화되어 경로를 노출하지 않습니다. 모델 발견은 `reasoning` 판단 근거를 가지며 `message`/`remediation`은 모델이 요청 locale에 따라 제공합니다(zh-CN은 중국어 변형). 모델 분석은 knownsec-skill-scanner 참조 프롬프트의 영어 버전(`src/model/prompts/*.md`)을 사용하며, 중국어 원본은 `*.zh.md`로 보존합니다.
+`locale`, `contentHash`, `riskScore`가 포함됩니다. 발췌문은 비밀값이 마스킹됩니다. `files` 모드에서는 경로와 콘텐츠가 디스크에서 읽히지 않습니다. `paths` 모드에서는 보고서의 `path`가 디스크의 절대 경로입니다. 각 finding은 `fileHash`(path+content의 SHA-256)를 가지며 `id`는 `ruleId:fileHash:line`로 콘텐츠 주소화되어 경로를 노출하지 않습니다. 모델 발견은 `reasoning` 판단 근거를 가지며 `message`/`remediation`은 모델이 요청 locale에 따라 제공합니다(zh-CN은 중국어 변형). 모델 분석은 프로젝트에 포함된 영어 프롬프트(`src/model/prompts/*.md`)를 사용하며, 중국어 변형은 `*.zh.md`로 보존합니다.
 
 ## 국제화(locale)
 
@@ -68,7 +68,7 @@ const reportFromPath = await scanSkill({ mode: "quick", paths: ["/path/to/skill_
 ```
 src/
   i18n/        로컬라이즈 리소스(zh-CN / en-US / ja-JP / ko-KR)
-  rules/       76개 참조 규칙 + 메타데이터(언어 무관)
+  rules/       76개 정적 규칙 + 메타데이터(언어 무관)
   detection/   정적 스캔 / 파일 레벨 검사 / 중복 제거 / 점수 산정 / 보고서 집계
   model/       전송 계층(OpenAI Responses / Chat Completions / Anthropic) / 에이전트 루프 / 정규화 / 프롬프트
   scanner.ts   오케스트레이터

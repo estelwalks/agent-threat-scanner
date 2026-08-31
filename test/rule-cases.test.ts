@@ -9,8 +9,8 @@ interface RuleCaseOptions {
   cweId?: string;
   fileTypes?: string[];
   extension?: string;
-  /** The reference pattern is internally contradictory and cannot match any input. */
-  referenceUnreachable?: true;
+  /** This pattern is internally contradictory and cannot match any input. */
+  unreachable?: true;
 }
 
 interface RuleCase extends RuleCaseOptions {
@@ -34,9 +34,9 @@ const rc = (
 ): RuleCase => ({ id, kind, severity, weight, cweId, positive, negative, ...options });
 
 /**
- * Golden examples for every rule in knownsec-skill-scanner rules.py.
- * Samples are inert strings and are never executed. IOC examples are copied from
- * the reference rule data solely to test exact matching and boundary behavior.
+ * Golden examples for every static rule.
+ * Samples are inert strings and are never executed. IOC examples exercise exact
+ * matching and boundary behavior.
  */
 const RULE_CASES: RuleCase[] = [
   rc("RM_RF_ROOT", "destructive", "critical", 100, "CWE-78", "rm -rf /", "rm -rf ./"),
@@ -114,7 +114,7 @@ const RULE_CASES: RuleCase[] = [
 
   rc("BASE64_DECODE_EXEC", "obfuscation", "high", 60, "CWE-506", "base64.b64decode(blob); exec(decoded)", "base64.b64decode(blob); save(decoded)", { bypassVerification: true }),
   rc("HEX_BLOB", "obfuscation", "medium", 30, "CWE-506", "\\\\x41".repeat(20), "\\\\x41".repeat(19)),
-  rc("XOR_ENCODING", "obfuscation", "medium", 35, "CWE-506", "value ^ 0x5A", "value + 0x5A", { referenceUnreachable: true }),
+  rc("XOR_ENCODING", "obfuscation", "medium", 35, "CWE-506", "value ^ 0x5A", "value + 0x5A", { unreachable: true }),
   rc("ROT13", "obfuscation", "low", 10, "CWE-506", "codecs.encode(value, 'rot13')", "codecs.encode(value, 'utf8')"),
 
   rc("WEBSOCKET_UNSECURE", "network_abuse", "low", 10, undefined, "ws://example.invalid/socket", "wss://example.invalid/socket"),
@@ -135,8 +135,8 @@ const scanRaw = (content: string, extension = "txt"): ReturnType<typeof staticSc
 const hasRule = (findings: ReturnType<typeof staticScan>, ruleId: string): boolean =>
   findings.some((finding) => finding.ruleId === ruleId);
 
-describe("knownsec 76-rule positive/negative golden matrix", () => {
-  it("covers every rule exactly once and preserves reference order", () => {
+describe("76-rule positive/negative golden matrix", () => {
+  it("covers every rule exactly once and preserves rule order", () => {
     expect(RULE_CASES).toHaveLength(76);
     expect(RULE_CASES.map((item) => item.id)).toEqual(STATIC_RULES.map((rule) => rule.id));
     expect(new Set(RULE_CASES.map((item) => item.id))).toHaveLength(76);
@@ -159,8 +159,8 @@ describe("knownsec 76-rule positive/negative golden matrix", () => {
 
       const positive = scanRaw(testCase.positive, extension);
       const negative = scanRaw(testCase.negative, extension);
-      if (testCase.referenceUnreachable) {
-        // Exact knownsec behavior: r"\\^\\s*0x..." parses as a literal
+      if (testCase.unreachable) {
+        // This pattern parses r"\\^\\s*0x..." as a literal
         // backslash followed by a start anchor, so no input can satisfy it.
         expect(testCase.id).toBe("XOR_ENCODING");
         expect(hasRule(positive, testCase.id)).toBe(false);
@@ -173,16 +173,16 @@ describe("knownsec 76-rule positive/negative golden matrix", () => {
     });
   }
 
-  it("has 75 reachable rules and locks the one unreachable reference pattern", () => {
-    expect(RULE_CASES.filter((item) => !item.referenceUnreachable)).toHaveLength(75);
-    expect(RULE_CASES.filter((item) => item.referenceUnreachable).map((item) => item.id)).toEqual(["XOR_ENCODING"]);
+  it("has 75 reachable rules and locks the one unreachable pattern", () => {
+    expect(RULE_CASES.filter((item) => !item.unreachable)).toHaveLength(75);
+    expect(RULE_CASES.filter((item) => item.unreachable).map((item) => item.id)).toEqual(["XOR_ENCODING"]);
   });
 });
 
 describe("file-type scope", () => {
   const scoped = RULE_CASES.filter((item) => item.fileTypes);
 
-  it("tracks all and only the 13 file-scoped reference rules", () => {
+  it("tracks all and only the 13 file-scoped rules", () => {
     expect(scoped).toHaveLength(13);
     expect(scoped.map((item) => item.id)).toEqual(STATIC_RULES.filter((rule) => rule.fileTypes).map((rule) => rule.id));
   });
@@ -197,7 +197,7 @@ describe("file-type scope", () => {
   }
 });
 
-describe("reference edge behavior", () => {
+describe("rule edge behavior", () => {
   it("keeps PHP and Ruby system() case-sensitive while other function names remain case-insensitive", () => {
     expect(hasRule(scanRaw("system($cmd);", "php"), "PHP_EXEC")).toBe(true);
     expect(hasRule(scanRaw("System($cmd);", "php"), "PHP_EXEC")).toBe(false);

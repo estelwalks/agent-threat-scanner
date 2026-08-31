@@ -53,7 +53,7 @@ const reportFromPath = await scanSkill({ mode: "quick", paths: ["/path/to/skill_
 `kindDisplay`/`severityDisplay`）、`rules`（ruleId ごとに集計された静的発見。`count` と個別 `matches`）、
 `branches`（static/ruleReview/singleFileAnalysis/multiFileAnalysis。complete/skipped/failed）、
 `skippedFiles`、`categories`（種類ごとの件数 / 最高深刻度 / 総重み）、`threatLevel`、`threatLevelDisplay`、
-`locale`、`contentHash`、`riskScore` が含まれます。抜粋はシークレットがマスクされます。`files` モードでは、パスとコンテンツはディスクから読み取られません。`paths` モードでは、レポートの `path` はディスク上の絶対パスになります。各 finding は `fileHash`（path+content の SHA-256）を持ち、`id` は `ruleId:fileHash:line` で、コンテンツアドレス型でありパスを漏らしません。モデル発見は `reasoning` の判定理由を持ち、`message`/`remediation` はモデルがリクエストの locale に応じて提供します（zh-CN は中国語版）。モデル分析は knownsec-skill-scanner 参考プロンプトの英語版（`src/model/prompts/*.md`）を使用し、中国語のオリジナルは `*.zh.md` として保持しています。
+`locale`、`contentHash`、`riskScore` が含まれます。抜粋はシークレットがマスクされます。`files` モードでは、パスとコンテンツはディスクから読み取られません。`paths` モードでは、レポートの `path` はディスク上の絶対パスになります。各 finding は `fileHash`（path+content の SHA-256）を持ち、`id` は `ruleId:fileHash:line` で、コンテンツアドレス型でありパスを漏らしません。モデル発見は `reasoning` の判定理由を持ち、`message`/`remediation` はモデルがリクエストの locale に応じて提供します（zh-CN は中国語版）。モデル分析はプロジェクト内蔵の英語プロンプト（`src/model/prompts/*.md`）を使用し、中国語のバリエーションは `*.zh.md` として保持しています。
 
 ## 国際化（locale）
 
@@ -69,7 +69,7 @@ const reportFromPath = await scanSkill({ mode: "quick", paths: ["/path/to/skill_
 ```
 src/
   i18n/        ローカライズ済みリソース（zh-CN / en-US / ja-JP / ko-KR）
-  rules/       76 件の参照ルール + メタデータ（言語非依存）
+  rules/       76 件の静的ルール + メタデータ（言語非依存）
   detection/   静的スキャン / ファイルレベルチェック / 重複排除 / スコアリング / レポート集計
   model/       トランスポート（OpenAI Responses / Chat Completions / Anthropic）/ エージェントループ / 正規化 / プロンプト
   scanner.ts   オーケストレータ

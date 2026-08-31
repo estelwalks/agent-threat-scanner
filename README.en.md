@@ -6,7 +6,7 @@
 
 # skill-scanner
 
-Private development package for an ESM TypeScript Skill security scanner. It never executes
+Open-source ESM TypeScript Skill security scanner. It never executes
 supplied files and never persists API keys. Scanning is privacy-preserving by default: pass
 in-memory `files` (path + content — no disk I/O), or pass file/directory `paths` and the
 scanner reads them from disk. `quick` runs static rules; `full` adds optional model review
@@ -67,7 +67,7 @@ Each finding carries a `fileHash` (SHA-256 of path+content) and its `id` is `rul
 so ids are content-addressed and never leak the path.
 Model findings carry a `reasoning` rationale; their `message`/`remediation` are supplied by the model in the
 request locale (zh-CN uses the Chinese variant). Model analysis uses English versions of the
-knownsec-skill-scanner reference prompts (`src/model/prompts/*.md`); the Chinese originals are kept as `*.zh.md`.
+the project's English prompts (`src/model/prompts/*.md`); Chinese variants are kept as `*.zh.md`.
 
 ## Internationalization (locale)
 
@@ -83,7 +83,7 @@ When `report.locale !== current language`, mark the report as "needs re-scan" an
 ```
 src/
   i18n/        Localized resources (zh-CN / en-US / ja-JP / ko-KR)
-  rules/       76 reference rules + metadata (language-independent)
+  rules/       76 static rules + metadata (language-independent)
   detection/   Static scan / file-level checks / dedup / scoring / report aggregation
   model/       Transport (OpenAI Responses / Chat Completions / Anthropic) / Agent loop / normalization / prompts
   scanner.ts   Orchestrator

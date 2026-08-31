@@ -7,7 +7,7 @@ export interface RuleSeed {
   remediation: string; remediationZh: string; bypassVerification?: boolean;
 }
 
-/** Exact static-rule data ported from knownsec-skill-scanner. */
+/** Static-rule definitions maintained by this package. */
 export const RULE_SEEDS: RuleSeed[] = [
   {"id":"RM_RF_ROOT","kind":"destructive","severity":"critical","pattern":"rm\\s+(-[a-zA-Z]*\\s+)*-[a-zA-Z]*[rR][a-zA-Z]*\\s+(-[a-zA-Z]*\\s+)*/($|\\s|;|\\|)","name":"Remove root directory","nameZh":"删除根目录","message":"rm -rf / removes root directory","messageZh":"rm -rf / 删除根目录","weight":100,"remediation":"Check command args; avoid operating on root or using wildcards","remediationZh":"检查命令参数，避免操作根目录或使用通配符","cweId":"CWE-78"},
   {"id":"RM_RF_HOME","kind":"destructive","severity":"critical","pattern":"rm\\s+(-[a-zA-Z]*\\s+)*-[a-zA-Z]*[rR][a-zA-Z]*\\s+(-[a-zA-Z]*\\s+)*(?:'|\\\")?(~|\\$HOME|\\$\\{HOME\\})(?:'|\\\\\\\")?/?(?:\\s|;|\\||$)","name":"Remove home directory","nameZh":"删除用户目录","message":"rm -rf ~ removes user home","messageZh":"rm -rf ~ 删除用户目录","weight":95,"remediation":"Check command args; avoid operating on user home","remediationZh":"检查命令参数，避免操作用户主目录","cweId":"CWE-78"},

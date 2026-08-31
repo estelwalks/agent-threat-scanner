@@ -64,13 +64,13 @@ describe("collectPaths", () => {
   });
 });
 
-describe("reference binary detection", () => {
+describe("binary detection", () => {
   it("checks only the first 1024 bytes for NUL bytes", () => {
     expect(detectBinary(Buffer.from([0x61, 0x00]))).toBe(true);
     expect(detectBinary(Buffer.concat([Buffer.alloc(1024, 0x61), Buffer.from([0x00])]))).toBe(false);
   });
 
-  it("uses the reference greater-than-30-percent non-text threshold", () => {
+  it("uses the configured greater-than-30-percent non-text threshold", () => {
     expect(detectBinary(Buffer.from([1, 2, 3, 65, 65, 65, 65, 65, 65, 65]))).toBe(false);
     expect(detectBinary(Buffer.from([1, 2, 3, 4, 65, 65, 65, 65, 65, 65]))).toBe(true);
     expect(detectBinary(Buffer.from([7, 8, 9, 10, 12, 13, 27, 0x20, 0x80, 0xff]))).toBe(false);

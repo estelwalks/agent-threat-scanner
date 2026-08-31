@@ -102,7 +102,7 @@ export async function scanSkill(input: unknown, dependencies: ScanDependencies =
           }
         }
         log?.(`ruleReview: ${findings.length} finding(s) after verification`);
-        // 2) Reference dynamic route: exactly one SKILL.md uses single-file analysis; all other inputs use the behavioral agent.
+        // 2) Dynamic route: exactly one SKILL.md uses single-file analysis; all other inputs use the behavioral agent.
         const results: Array<{ name: "singleFileAnalysis" | "multiFileAnalysis"; findings?: BehavioralRiskItem[]; error?: string }> = [];
         if (singleSkillFile) {
           branches.push({ name: "multiFileAnalysis", status: "skipped", detail: "single SKILL.md input" });
@@ -139,7 +139,7 @@ export async function scanSkill(input: unknown, dependencies: ScanDependencies =
           if (result.error) { partial = true; branches.push({ name: result.name, status: "failed", detail: redact(result.error) }); log?.(`${result.name}: failed`); }
           else { branches.push({ name: result.name, status: "complete" }); modelFindings.push(...asFindings(result.findings ?? [], files, result.name, locale, fileHashes)); log?.(`${result.name}: ${result.findings?.length ?? 0} finding(s)`); }
         }
-        // 3) Reference location dedup runs within each side before semantic dedup.
+        // 3) Location dedup runs within each side before semantic dedup.
         const locationDeduped = dedupByLocation(findings, modelFindings);
         const verifiedStatic = locationDeduped.rules;
         const modelDeduped = locationDeduped.model;

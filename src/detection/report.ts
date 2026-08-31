@@ -17,7 +17,7 @@ export function asFindings(items: BehavioralRiskItem[], files: SkillFile[], phas
     if (!kind) continue;
     const severity = normalizeSeverity(item.severity);
     const path = item.file_path ? (validPaths.has(item.file_path) ? item.file_path : null) : fallback;
-    if (!path) continue; // finding references a non-scanned file (e.g. the attack-patterns reference) → drop
+    if (!path) continue; // finding names a non-scanned file (e.g. the bundled attack-pattern library) → drop
     const fileHash = fileHashes.get(path);
     output.push({
       id: `model:${phase}:${index}`, kind, severity, source: "model",
@@ -60,7 +60,7 @@ export function buildCategories(findings: Finding[], locale: LocaleKey): ScanSki
   return buckets;
 }
 
-/** Aggregates static findings by rule_id (aligns with knownsec findings.rules: match_count + matches list). */
+/** Aggregates static findings by rule_id for the report's count and matches fields. */
 export function buildRuleAggregations(ruleFindings: Finding[], locale: LocaleKey): ScanSkillReport["rules"] {
   const m = getMessages(locale);
   const groups = new Map<string, { ruleId: string; ruleName: string; kind: Finding["kind"]; severity: Finding["severity"]; weight: number; cweId?: string; matches: Array<{ path: string; line?: number; excerpt?: string }> }>();

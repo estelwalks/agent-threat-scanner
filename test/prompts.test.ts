@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildModelPrompts } from "../src/model/prompts.js";
 
 describe("buildModelPrompts", () => {
-  it("loads the English reference analysis prompts and exposes the aligned output shapes", () => {
+  it("loads the English analysis prompts and exposes the aligned output shapes", () => {
     const p = buildModelPrompts();
     expect(p.single).toContain("Core judgment axiom");
     expect(p.multi).toContain("Core judgment axiom");

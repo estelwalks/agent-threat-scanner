@@ -3,7 +3,7 @@ import { ENGINE_VERSION, RULES_VERSION, STATIC_RULES } from "../src/rules/index.
 import { RISK_KINDS, SEVERITIES } from "../src/types.js";
 
 describe("static rule library", () => {
-  it("ships the exact 76-rule knownsec library", () => {
+  it("ships the exact 76-rule static library", () => {
     expect(STATIC_RULES).toHaveLength(76);
     expect(STATIC_RULES[0]?.id).toBe("RM_RF_ROOT");
     expect(STATIC_RULES.at(-1)?.id).toBe("DAN_MODE");

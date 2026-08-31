@@ -4,7 +4,7 @@ import { buildModelPrompts } from "../model/prompts.js";
 import type { Finding, FetchLike, ModelConfig } from "../types.js";
 import type { TokenUsageCollector } from "../model/usage.js";
 
-/** Exact reference location dedup: rules win; each side keeps the highest weight at a concrete path+line. */
+/** Exact location dedup: rules win; each side keeps the highest weight at a concrete path+line. */
 export function dedupByLocation(ruleFindings: Finding[], modelFindings: Finding[]): { rules: Finding[]; model: Finding[] } {
   const bestRules = new Map<string, Finding>();
   const fileLevelRules: Finding[] = [];

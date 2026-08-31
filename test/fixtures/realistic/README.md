@@ -17,7 +17,7 @@ obvious non-secret placeholders.
 | `positive/prompt-injection` | `IGNORE_INSTRUCTIONS` | 40 | block |
 | `positive/multi-file-chain` | `HTTP_REQUEST` | 90 | allow |
 
-The low-severity positive cases intentionally preserve the reference engine's
+The low-severity positive cases intentionally preserve the scanner's
 deduction-based score and verdict mapping; the test suite must not reinterpret
 those outcomes.
 

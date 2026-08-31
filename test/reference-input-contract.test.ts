@@ -8,7 +8,7 @@ import type { ModelConfig } from "../src/types.js";
 
 const model: ModelConfig = {
   endpoint: "https://model.example/v1",
-  apiKey: "sk-reference-contract-secret",
+  apiKey: "sk-input-contract-secret",
   liteModel: "lite",
   proModel: "pro",
   timeoutMs: 1000,
@@ -33,9 +33,9 @@ function cleanModel(captured: string[] = []) {
   };
 }
 
-describe("reference disk input contract", () => {
+describe("disk input contract", () => {
   let dir: string;
-  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "skill-scanner-reference-")); });
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "skill-scanner-input-")); });
   afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
   it("keeps ignored project-tree files visible to file checks but not rules", async () => {

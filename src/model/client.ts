@@ -3,7 +3,7 @@ import type { FetchLike, ModelConfig, SkillFile } from "../types.js";
 import type { TokenUsageCollector, UsageContext } from "./usage.js";
 
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
-/** Single behavioral risk item returned by the model (reference BehavioralRiskItem format). */
+/** Single behavioral risk item returned by the model. */
 export interface BehavioralRiskItem {
   index: number; category: string; severity: string; file_path: string; line_number: number;
   name: string; name_zh: string; description: string; description_zh: string; remediation: string; remediation_zh: string; reasoning: string;
@@ -109,10 +109,10 @@ export const BehavioralRiskItemSchema = z.object({
   remediation_zh: z.string().max(500).default(""),
   reasoning: z.string().max(500).default(""),
 }).strict();
-/** Model response for behavioral analysis (reference BehavioralAnalysisResult format). */
+/** Model response for behavioral analysis. */
 export const BehavioralAnalysisResultSchema = z.object({ risk_found: z.boolean(), findings: z.array(BehavioralRiskItemSchema).max(50) }).strict();
 export const ModelResponseSchema = BehavioralAnalysisResultSchema;
-/** Model response for rule-hit verification (reference RulesVerificationResult format). */
+/** Model response for rule-hit verification. */
 export const RuleVerificationSchema = z.object({ verifications: z.array(z.object({ index: z.number().int().nonnegative(), is_true_positive: z.boolean(), reasoning: z.string().max(240).optional() }).strict()).max(100) }).strict();
 
 /** Appends a JSON hint so OpenAI-compatible `response_format: json_object` is accepted (it requires the word "json" in the prompt). */
@@ -189,7 +189,7 @@ export async function chatJson<S extends z.ZodType>(fetcher: FetchLike, model: M
   } finally { clearTimeout(timer); }
 }
 
-/** Single-shot task-style ask (system + user(task + payload)). Pass `system` to use a custom system prompt (e.g. a reference prompt); a string `payload` is sent verbatim instead of JSON-encoded. */
+/** Single-shot task-style ask (system + user(task + payload)). Pass `system` to use a custom system prompt; a string `payload` is sent verbatim instead of JSON-encoded. */
 export async function askModel<S extends z.ZodType>(fetcher: FetchLike, model: ModelConfig, modelName: string, task: string, payload: unknown, shape: string, schema: S, system?: string, usage?: { collector: TokenUsageCollector; context: UsageContext }): Promise<z.infer<S>> {
   const payloadText = typeof payload === "string" ? payload : JSON.stringify(payload);
   return chatJson(fetcher, model, modelName, [

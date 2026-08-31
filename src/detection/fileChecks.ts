@@ -52,7 +52,7 @@ function collectSuspiciousIps(content: string): { ips: string[]; line: number; l
 }
 
 /**
- * File-level risk checks ported from knownsec-skill-scanner.
+ * File-level risk checks maintained by this package.
  * Every check is based solely on the host-provided relative paths and text content; no file paths are opened and no code is executed.
  */
 export function fileLevelScan(allFiles: SkillFile[], _scannedFiles: SkillFile[], locale: LocaleKey, fileHashes: ReadonlyMap<string, string> = new Map()): Finding[] {
@@ -83,7 +83,7 @@ export function fileLevelScan(allFiles: SkillFile[], _scannedFiles: SkillFile[],
   }
   let totalContentLength = 0;
   // line count / consecutive newlines / total content size are structural heuristics applied to all provided content
-  // (including files the host marked binary but that still have content), matching knownsec file_check; binary content
+  // (including files the host marked binary but that still have content); binary content
   // itself is not analyzed and regex rules only run against text files.
   // Content size is approximated by UTF-16 code units: for ASCII text this ≈ byte count, without the inflation caused
   // by lossy decode-and-re-encode.

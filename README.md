@@ -57,7 +57,7 @@ const reportFromPath = await scanSkill({ mode: "quick", paths: ["/path/to/skill_
 缓存 token 已包含在 input 中，Anthropic 的 cache read/create token 会计入 input，`cachedInputTokens` 单独展示缓存命中量。
 摘录内容会做密钥脱敏；`files` 模式下路径与内容从不读盘。`paths` 模式下报告的 `path` 为磁盘绝对路径。
 每条 finding 携带 `fileHash`（path+content 的 SHA-256），`id` 为 `ruleId:fileHash:line`，内容寻址、不泄露路径。
-模型发现携带 `reasoning` 判定理由，`message`/`remediation` 由模型按请求 locale 提供（zh-CN 取中文变体）；模型分析使用 knownsec-skill-scanner 参考提示词的**英文版**（`src/model/prompts/*.md`），中文原版保留为 `*.zh.md`。
+模型发现携带 `reasoning` 判定理由，`message`/`remediation` 由模型按请求 locale 提供（zh-CN 取中文变体）；模型分析使用项目内置的**英文版**提示词（`src/model/prompts/*.md`），中文变体保留为 `*.zh.md`。
 
 ## 国际化（locale）
 
@@ -72,7 +72,7 @@ const reportFromPath = await scanSkill({ mode: "quick", paths: ["/path/to/skill_
 ```
 src/
   i18n/        多语言资源（zh-CN / en-US / ja-JP / ko-KR）
-  rules/       76 条参考规则 + 元数据（语言无关）
+  rules/       76 条静态规则 + 元数据（语言无关）
   detection/   静态扫描 / 文件级检查 / 去重 / 评分 / 报告聚合
   model/       传输层（OpenAI Responses / Chat Completions / Anthropic）/ Agent 循环 / 归一化 / 提示词
   scanner.ts   编排器

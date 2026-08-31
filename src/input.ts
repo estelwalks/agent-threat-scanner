@@ -11,9 +11,9 @@ export interface CollectedInput {
   files: SkillFile[];
   /** Files excluded from content scanning but retained for file-level size/count checks. */
   excludedFiles: SkillFile[];
-  /** Absolute paths visible to the reference project tree and therefore to rules/models. */
+  /** Absolute paths visible to the scanned project tree and therefore to rules/models. */
   analysisPaths: string[];
-  /** Reference route decision: a directory entry other than the sole SKILL.md makes this false. */
+  /** Route decision: a directory entry other than the sole SKILL.md makes this false. */
   singleSkillFile: boolean;
   skipped: ScanSkillReport["skippedFiles"];
 }

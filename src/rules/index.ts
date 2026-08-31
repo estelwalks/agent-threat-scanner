@@ -1,7 +1,7 @@
 import { RULE_SEEDS } from "./rules.js";
 import type { RiskKind, Severity } from "../types.js";
 
-export const RULES_VERSION = "2026.08.11-knownsec-76";
+export const RULES_VERSION = "2026.08.11-76";
 export const ENGINE_VERSION = "0.2.0";
 
 export interface StaticRule {

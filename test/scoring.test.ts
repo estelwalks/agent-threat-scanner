@@ -26,7 +26,7 @@ describe("computeScore", () => {
     ]);
     expect(score).toBe(55);
   });
-  it("uses the reference critical model-finding weight", () => {
+  it("uses the configured critical model-finding weight", () => {
     expect(computeScore([finding({ source: "model", severity: "critical" })])).toBe(55);
   });
   it("falls back to default weights when a finding has no weight", () => {

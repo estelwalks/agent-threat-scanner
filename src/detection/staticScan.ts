@@ -59,7 +59,7 @@ const COMPILED_RULES = STATIC_RULES.map((rule) => {
   return { rule, test: (line: string) => regex.test(line) };
 });
 
-/** Exact knownsec line-by-line rule matching, including fileTypes and the 512 KiB guard. */
+/** Line-by-line static-rule matching, including fileTypes and the 512 KiB guard. */
 export function staticScan(files: SkillFile[], locale: LocaleKey, fileHashes: ReadonlyMap<string, string> = new Map()): Finding[] {
   const m = getMessages(locale);
   const output: Finding[] = [];
