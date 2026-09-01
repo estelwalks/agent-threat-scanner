@@ -1,6 +1,6 @@
 {
   "name": "@l3m0nc9/agent-threat-scanner",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "private": false,
   "description": "Privacy-preserving security scanner for agent artifacts (in-memory files or disk paths)",
   "type": "module",
