@@ -1,240 +1,261 @@
 <div align="center">
 
-[中文](README.md) · **English** · [日本語](README.ja.md) · [한국어](README.ko.md)
+# Agent Threat Scanner
+
+A local-first security scanner for agent artifacts. Detect prompt injection, command execution, data exfiltration, sensitive-file access, and related threats before an agent uses a file or tool.
+
+[![CI](https://github.com/l3m0nc9/agent-threat-scanner/actions/workflows/ci.yml/badge.svg)](https://github.com/l3m0nc9/agent-threat-scanner/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/%40l3m0nc9%2Fagent-threat-scanner)](https://www.npmjs.com/package/@l3m0nc9/agent-threat-scanner)
+[![Node.js >=24](https://img.shields.io/badge/node-%3E%3D24-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+[中文](README.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
 
 </div>
 
-# skill-scanner
+## What this project is
 
-Open-source ESM TypeScript Skill security scanner. It never executes
-supplied files and never persists API keys. Scanning is privacy-preserving by default: pass
-in-memory `files` (path + content — no disk I/O), or pass file/directory `paths` and the
-scanner reads them from disk. `quick` runs static rules; `full` adds optional model review
-via the **OpenAI Responses**, **OpenAI Chat Completions**, or **Anthropic Messages** API.
+Agent Threat Scanner is an ESM + TypeScript library and CLI for local development, code review, and CI. It never executes scanned files.
 
-```ts
-import { scanSkill } from "skill-scanner";
-const report = await scanSkill({ mode: "quick", files: [{ path: "SKILL.md", content: "# Demo" }] });
-// or scan a file/directory directly from disk:
-const reportFromPath = await scanSkill({ mode: "quick", paths: ["/path/to/skill_dir"] });
-```
+The current release accepts agent Skill content as files or directories. Dedicated adapters for MCP server configurations and complete agent projects are planned; they are not part of the current release.
 
-## Install and quick start
+## Why use it
 
-Node.js 20 or newer is required:
+- **Local-first**: pass in-memory files so the scanner does not read from disk; API keys are used only during model requests.
+- **Static + semantic**: quick mode is deterministic; full mode can add model verification and behavioral analysis.
+- **Risk-oriented**: checks command execution, exfiltration, secrets, persistence, privilege escalation, prompt injection, and more.
+- **Embeddable**: exports TypeScript APIs, Zod schemas, stable risk slugs, and content-addressed finding IDs.
+- **Auditable**: reports include branch status, skipped files, rule aggregation, scores, and token-usage details.
 
-```bash
-npm install skill-scanner
+## Quick start
 
-# Run the CLI without a global install
-npx skill-scanner /path/to/skill_dir --quick
-```
+Requires Node.js 24 or newer.
 
-The `quick` mode needs no API key. For `full` mode, provide `LLM_API_KEY` (plus the endpoint and model settings) through environment variables; do not put keys in source code or commit them.
+### Install and run the CLI
 
-## Detection
+~~~bash
+npm install @l3m0nc9/agent-threat-scanner
 
-- **76 static rules** across **11 risk kinds** (`remote_execution` / `command_injection` /
-  `data_exfiltration` / `secret_access` / `persistence` / `destructive` / `obfuscation` /
-  `privilege_escalation` / `sensitive_file_access` / `network_abuse` /
-  `prompt_injection`), including per-language command-injection rules, Windows/macOS-specific
-  patterns and an IOC blocklist (C2 IPs, exfil/OAST domains, malicious GitHub accounts,
-  malware hashes).
-- **File-level checks** (`RISK_FILE` and related rules): risky file extensions, oversized content (>1MB),
-  extremely long files (>2000 lines), consecutive-newline hiding and suspicious public IPs
-  (with a DNS/CDN whitelist).
-- **Rule verification**: `full` mode asks the lite model to verify each non-bypassed static
-  hit and drop false positives; IOC and file-level hits marked bypass are skipped.
-- **Model passes**: an input containing only `SKILL.md` runs `singleFileAnalysis` (pro); multi-file inputs run `multiFileAnalysis` (pro), which
-  runs a **ReAct agent loop** over in-memory files (tools `list_files` / `read_file` / `grep`,
-  ≤ `maxAgentTurns`, default 12) to trace cross-file behavior — falls back to a single-shot
-  dump on failure. Per-file content sent to the model is capped (head + tail, 30K chars each,
-  raised via `contextWindowTokens`); model-reported categories are normalized back to the
-  canonical slug kinds from localized/English aliases.
-- **Dedup**: model findings colliding with a rule hit on the same file+line are dropped
-  (rule wins); afterwards a lite-model **semantic dedup** removes rule findings that describe
-  the same risk as a model finding (model wins).
+# Run after installing in the current project
+npx agent-threat-scan ./path/to/skill --quick
 
-## Scoring
+# Run once without adding it to the current project
+npx --yes --package @l3m0nc9/agent-threat-scanner agent-threat-scan ./path/to/skill --quick
+~~~
 
-Deduction-based, aligned with a 0–100 score where higher is safer:
-`riskScore = max(0, 100 − Σ rule weights [each ruleId once] − Σ model finding weights)`.
-`threatLevel` maps to 5 bands (critical/high/medium/low/none); `verdict` is
-`block` (critical/high) / `warn` (medium) / `allow` (low/none), or `unknown` for a
-partial scan with no findings (never judged safe).
+Quick mode needs no API key. The target may be a directory containing SKILL.md or a single file.
 
-## Report
+### Use the library
 
-The report (Zod-validated) includes `findings` (with language-independent `kind`/`severity`
-slugs plus localized `kindDisplay`/`severityDisplay`), `rules` (static findings aggregated by
-ruleId, with `count` and per-match `matches`), `branches` (static/ruleReview/singleFileAnalysis/
-multiFileAnalysis with complete/skipped/failed), `skippedFiles`, `categories` (per-kind count /
-highest severity / total weight), `threatLevel`, `threatLevelDisplay`, `locale`, `contentHash`
-and `riskScore`. It also includes `tokenUsage`: model request and reported-usage counts, input/output/total
-tokens, plus per-model and per-branch breakdowns. Its status is `not_applicable`, `complete`, `partial`, or
-`unavailable`, so a proxy that omits usage is never misreported as a measured zero-token call. OpenAI cached
-tokens remain included in input, while Anthropic cache read/creation tokens are added to input; cache hits are
-also exposed separately as `cachedInputTokens`. Excerpts are secret-redacted; in `files` mode, path/content are never read from disk.
-When scanning `paths`, report `path` values are absolute disk paths.
-Each finding carries a `fileHash` (SHA-256 of path+content) and its `id` is `ruleId:fileHash:line`,
-so ids are content-addressed and never leak the path.
-Model findings carry a `reasoning` rationale; their `message`/`remediation` are supplied by the model in the
-request locale (zh-CN uses the Chinese variant). Model analysis uses English versions of the
-the project's English prompts (`src/model/prompts/*.md`); Chinese variants are kept as `*.zh.md`.
+~~~ts
+import { scanSkill } from "@l3m0nc9/agent-threat-scanner";
 
-## Internationalization (locale)
+const report = await scanSkill({
+  mode: "quick",
+  files: [
+    { path: "SKILL.md", content: "# Demo\nFormat local markdown files." }
+  ]
+});
 
-Requests may carry `locale: "zh-CN" | "en-US" | "ja-JP" | "ko-KR"` (default `zh-CN`). Rule names,
-descriptions, remediation and the summary in scan results are generated in that locale;
-`kind`/`severity`/`verdict`/`contentHash`/rule IDs stay language-independent.
-The report persists `locale` and `contentHash` (SHA-256 over sorted path+content), so hosts can use
-`contentHash + scannerVersion + rulesVersion + mode + locale` as a language-isolated cache key.
-When `report.locale !== current language`, mark the report as "needs re-scan" and do not reuse it directly.
+console.log(report.verdict, report.riskScore);
+~~~
 
-## Module structure
+If the host intentionally reads a path from disk:
 
-```
-src/
-  i18n/        Localized resources (zh-CN / en-US / ja-JP / ko-KR)
-  rules/       76 static rules + metadata (language-independent)
-  detection/   Static scan / file-level checks / dedup / scoring / report aggregation
-  model/       Transport (OpenAI Responses / Chat Completions / Anthropic) / Agent loop / normalization / prompts
-  scanner.ts   Orchestrator
-  types.ts     Zod schemas
-```
+~~~ts
+const report = await scanSkill({
+  mode: "quick",
+  paths: ["./my-skill"]
+});
+~~~
 
-## LLM configuration & testing (full mode)
+files and paths are mutually exclusive. In files mode, the library only processes content already supplied by the caller.
 
-`model` supports three protocols, selected via `provider`: `"openai-responses"`,
-`"openai-completions"`, or `"anthropic"`. The legacy value `"openai"` remains supported and maps to
-`"openai-completions"`. When omitted, the endpoint is inspected: containing `anthropic`/`claude` or
-ending in `/messages` → anthropic, ending in `/responses` → openai-responses, otherwise → openai-completions.
+## Detection coverage
 
-| provider | endpoint convention | actual request | auth header |
-|---|---|---|---|
-| `openai-responses` | base URL, e.g. `https://api.openai.com/v1` | appends `/responses` | `Authorization: Bearer <key>` |
-| `openai-completions` | base URL, e.g. `https://api.openai.com/v1` | appends `/chat/completions` | `Authorization: Bearer <key>` |
-| `anthropic` | `https://api.anthropic.com/v1` (or omit `/v1`) | appends `/messages` | `x-api-key` + `anthropic-version: 2023-06-01` |
-| `openai` (legacy) | same as `openai-completions` | appends `/chat/completions` | `Authorization: Bearer <key>` |
+The current engine ships 76 static rules across 11 risk kinds:
 
-Example run (`examples/run-full-scan.mjs` reads environment variables, builds `model`, and runs a
-full scan over a directory):
+| Risk kind | Examples |
+|---|---|
+| remote_execution | remote download-and-execute, callbacks, command retrieval |
+| command_injection | shell/interpreter invocation and unsafe argument construction |
+| data_exfiltration | unauthorized uploads, outbound transfer, suspicious telemetry |
+| secret_access | credentials, tokens, cloud keys, authentication files |
+| persistence | startup entries, scheduled tasks, hooks, persistent changes |
+| destructive | deletion, overwrite, destructive system operations |
+| obfuscation | encoded or hidden payloads and suspicious decoding |
+| privilege_escalation | sudo, permission changes, privileged execution |
+| sensitive_file_access | SSH, cloud credentials, browser data, sensitive paths |
+| network_abuse | suspicious public IPs, C2/OAST domains, unusual network behavior |
+| prompt_injection | attempts to override instructions, leak context, or weaken boundaries |
 
-```bash
-# OpenAI Responses
-LLM_PROVIDER=openai-responses LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
-LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
-node examples/run-full-scan.mjs /path/to/skill_dir
+File-level checks cover risky extensions, oversized content, very long files, hidden text, and suspicious public IPs. The engine also includes an IOC blocklist.
 
-# OpenAI Chat Completions compatible (OpenAI / DeepSeek / vLLM / Ollama ...)
-LLM_PROVIDER=openai-completions LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
-LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
-node examples/run-full-scan.mjs /path/to/skill_dir
+## Scan modes
 
-# If LLM_PROVIDER is omitted, openai-completions is used by default
-LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
-LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
-node examples/run-full-scan.mjs /path/to/skill_dir
-
-# Anthropic
-LLM_PROVIDER=anthropic LLM_ENDPOINT=https://api.anthropic.com/v1 LLM_API_KEY=sk-ant-... \
-LLM_LITE_MODEL=claude-sonnet-5 LLM_PRO_MODEL=claude-opus-5 \
-node examples/run-full-scan.mjs /path/to/skill_dir
-```
-
-Supported environment variables:
-
-| Variable | Required | Description |
+| Mode | Use it for | Behavior |
 |---|---|---|
-| `LLM_PROVIDER` | no | `openai-responses` / `openai-completions` / `anthropic`; legacy `openai` maps to `openai-completions`; auto-detected when omitted |
-| `LLM_ENDPOINT` | yes | base URL, see endpoint conventions above |
-| `LLM_API_KEY` | yes | API key (used only in the request, never persisted) |
-| `LLM_LITE_MODEL` | yes | model for rule verification + semantic dedup |
-| `LLM_PRO_MODEL` | yes | model for single/cross-file behavioral analysis |
-| `LLM_TIMEOUT_MS` | no | per-call model timeout, default 120000 |
-| `LLM_CONTEXT_WINDOW_TOKENS` | no | model context window (tokens), e.g. `1000000` for 1M; raises the content cap sent to the model when declared |
-| `LLM_MAX_AGENT_TURNS` | no | max tool-call turns for the multiFileAnalysis behavioral agent, default 12 |
-| `LLM_LOCALE` | no | `zh-CN`/`en-US`/`ja-JP`/`ko-KR`, default `zh-CN` |
+| quick | pre-commit checks and environments without a model | static rules and file-level checks |
+| full | high-risk changes and release review | quick results plus lite-model rule verification and pro-model behavioral analysis |
 
-You can also write these variables to a `.env` file in the project root (already gitignored) and run
-`set -a; source .env; set +a` first.
-
-Passing `model` directly in code also works: `{ provider, endpoint, apiKey, liteModel, proModel, timeoutMs? }`.
-Responses uses `/responses`, Chat Completions uses `/chat/completions`, and Anthropic uses `/messages`;
-the path is not appended twice when the endpoint already includes it.
-Model output must be strict JSON; responses tolerate markdown code fences and surrounding comment text.
-If any branch fails, a `partial` report is returned with static results preserved and the branch marked
-failed/skipped in `branches`. See the exported Zod schemas for details.
+A single SKILL.md uses single-file analysis. Multi-file input uses a behavioral loop with list_files, read_file, and grep tools to trace cross-file relationships. If a model branch fails, static results are preserved and the report is marked partial.
 
 ## CLI
 
-The package ships a `skill-scanner` bin command (build first with `npm run build`, then use
-`npm link` or `node dist/cli.js`):
+~~~text
+agent-threat-scan <file-or-directory> [options]
+~~~
 
-```bash
-skill-scanner <file-or-directory> [options]
-```
+| Option | Description |
+|---|---|
+| --quick | static-only scan |
+| --mode <quick\|full> | select scan mode |
+| --config <file> | config file, default ./.agent-threat-scanner.json |
+| --locale <locale> | zh-CN, en-US, ja-JP, or ko-KR |
+| --json | print the full JSON report |
+| --output <file> | write the report to a file |
+| --verbose | print scan progress to stderr |
+| --provider <name> | openai-responses, openai-completions, or anthropic |
+| --endpoint <url> | model API base URL |
+| --lite-model <name> | rule-verification and semantic-dedup model |
+| --pro-model <name> | behavioral-analysis model |
+| --timeout-ms <ms> | per-call timeout, default 120000 |
+| --context-window-tokens <n> | raise the model content budget |
+| --max-agent-turns <n> | max multi-file tool-call turns, default 12 |
 
-Examples:
+~~~bash
+agent-threat-scan ./my-skill --quick
+agent-threat-scan ./my-skill --quick --json --output report.json
+agent-threat-scan ./my-skill --config .agent-threat-scanner.json
+~~~
 
-```bash
-# static-only scan of a directory (or a single file)
-skill-scanner /path/to/skill_dir
-skill-scanner /path/to/SKILL.md
+## Full mode and model configuration
 
-# full scan via a JSON config file
-skill-scanner /path/to/skill_dir --config .skill-scanner.json
+Supported protocols are OpenAI Responses, OpenAI Chat Completions, and Anthropic Messages.
 
-# full scan via environment variables (LLM_*)
-LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
-LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
-skill-scanner /path/to/skill_dir
+Copy the [configuration template](.agent-threat-scanner.example.json):
 
-# full JSON report to stdout, or to a file
-skill-scanner /path/to/skill_dir --json
-skill-scanner /path/to/skill_dir --json --output report.json
-```
-
-`.skill-scanner.json` (the `model` object mirrors the library `model` config):
-
-```json
+~~~json
 {
   "mode": "full",
-  "locale": "zh-CN",
+  "locale": "en-US",
   "model": {
-    "provider": "anthropic",
-    "endpoint": "https://api.anthropic.com/v1",
-    "apiKey": "sk-ant-...",
-    "liteModel": "claude-sonnet-5",
-    "proModel": "claude-opus-5"
+    "provider": "openai-responses",
+    "endpoint": "https://api.openai.com/v1",
+    "apiKey": "sk-...",
+    "liteModel": "gpt-4o-mini",
+    "proModel": "gpt-4o"
   }
 }
-```
+~~~
 
-A ready-to-copy template ships at `.skill-scanner.example.json` — copy it to `.skill-scanner.json`
-and fill in your values (the real config file is gitignored, so API keys are never committed).
+Or configure the model with environment variables:
 
-Options:
+~~~bash
+export LLM_PROVIDER=openai-responses
+export LLM_ENDPOINT=https://api.openai.com/v1
+export LLM_API_KEY=sk-...
+export LLM_LITE_MODEL=gpt-4o-mini
+export LLM_PRO_MODEL=gpt-4o
 
-| Flag | Description |
-|---|---|
-| `<file-or-directory>` | target to scan |
-| `--config <file>` | JSON config file (default: `./.skill-scanner.json`) |
-| `--mode <quick\|full>` | scan mode (default: full if a model is configured, else quick) |
-| `--quick` | static-only scan |
-| `--locale <locale>` | `zh-CN` / `en-US` / `ja-JP` / `ko-KR` (default `zh-CN`) |
-| `--provider <openai-responses\|openai-completions\|anthropic>` | LLM protocol (legacy `openai` maps to `openai-completions`) |
-| `--endpoint <url>` | LLM base URL |
-| `--lite-model <name>` | model for rule verification + semantic dedup |
-| `--pro-model <name>` | model for single/cross-file behavioral analysis |
-| `--timeout-ms <ms>` | per-call model timeout (default 120000) |
-| `--context-window-tokens <n>` | model context window in tokens |
-| `--max-agent-turns <n>` | behavioral agent tool-call turns (default 12) |
-| `--json` | output the full JSON report |
-| `--output <file>` | write the report to a file |
-| `--verbose` | verbose scan logging to stderr (keeps stdout clean for the report) |
-| `-h, --help` | show help |
-| `-v, --version` | show version |
+agent-threat-scan ./my-skill --mode full
+~~~
 
-Config precedence: CLI flags > config file > `LLM_*` environment variables.
-The CLI auto-loads `./.env` from the current directory (without overriding already-set variables), so no manual `source` is needed.
+| Variable | Required | Default |
+|---|---:|---|
+| LLM_PROVIDER | no | inferred from endpoint |
+| LLM_ENDPOINT | full only | none |
+| LLM_API_KEY | full only | none |
+| LLM_LITE_MODEL | full only | none |
+| LLM_PRO_MODEL | full only | none |
+| LLM_TIMEOUT_MS | no | 120000 |
+| LLM_CONTEXT_WINDOW_TOKENS | no | automatic cap |
+| LLM_MAX_AGENT_TURNS | no | 12 |
+| LLM_LOCALE | no | zh-CN |
+
+## Reports and scoring
+
+Reports are validated by exported Zod schemas. Important fields include:
+
+- verdict: allow, warn, block, or unknown
+- riskScore: 0–100; higher is safer
+- threatLevel: none, low, medium, high, or critical
+- findings: normalized kind, severity, source, location, message, and remediation
+- rules: static findings aggregated by ruleId with individual matches
+- branches: static, rule review, single-file analysis, and multi-file analysis status
+- skippedFiles: files that were not analyzed and the reason
+- contentHash: SHA-256 over sorted path + content pairs
+- tokenUsage: request counts and per-model/per-branch token details
+
+Scoring is deduction-based:
+
+~~~text
+riskScore = max(0, 100 - staticRuleWeights - modelFindingWeights)
+~~~
+
+A partial scan with no findings returns unknown; incomplete evidence is never treated as safe.
+
+## Privacy and security boundary
+
+- Scanned files and scripts are never executed.
+- files mode does not perform disk I/O inside the library.
+- paths mode reads only paths explicitly supplied by the host.
+- API keys are not written to reports, logs, or persistent storage.
+- Excerpts are secret-redacted; finding IDs use content hashes and do not contain paths.
+- This release provides static and model-assisted analysis, not sandbox execution, dynamic network probing, or runtime protection.
+
+Never commit a real API key. Use environment variables, an untracked .agent-threat-scanner.json, or CI secrets.
+
+## CI integration
+
+~~~yaml
+- name: Scan agent artifacts
+  run: |
+    npm ci
+    npm run build
+    npx agent-threat-scan ./path/to/skill --quick --json --output agent-threat-report.json
+~~~
+
+For release gates, use --mode full and connect block or high-severity results to your own policy.
+
+## Roadmap
+
+- [ ] MCP server and tool-manifest parsing
+- [ ] Agent configuration, tool-permission, and prompt-composition analysis
+- [ ] auto mode for Skill, MCP, and Agent adapters
+- [ ] SARIF, JUnit, and GitHub pull-request annotations
+- [ ] Configurable rule packs, organizational allowlists, and baselines
+- [ ] Isolated dynamic analysis with an explicit security boundary
+
+Roadmap items are not available in the current release unless documented elsewhere.
+
+## Development
+
+~~~bash
+npm ci --registry=https://registry.npmmirror.com
+npm run build
+npm run typecheck
+npm run lint
+npm test
+npm pack --dry-run
+~~~
+
+Examples live in examples/. Rules and prompts live in src/rules/ and src/model/prompts/.
+
+## Project layout
+
+~~~text
+src/
+├── scanner.ts       scan orchestration
+├── types.ts         Zod input/output schemas
+├── rules/           static rules and metadata
+├── detection/       checks, scoring, deduplication, report aggregation
+├── model/           model transports, behavioral analysis, prompts
+└── i18n/            localized resources
+~~~
+
+Contributions are welcome. Read [SECURITY.md](SECURITY.md) for vulnerability reports and [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
+
+## License
+
+[MIT](LICENSE) © l3m0nc9 contributors

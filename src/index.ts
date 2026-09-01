@@ -11,4 +11,4 @@ export {
   RiskKindSchema, SeveritySchema, ThreatLevelSchema, ProviderSchema, LocaleSchema,
   SkillFileSchema, ModelConfigSchema, ScanSkillRequestSchema, FindingSchema, BranchSchema, CategoryBucketSchema, RuleMatchSchema, RuleAggregationSchema, TokenUsageBreakdownSchema, TokenUsageSchema, ScanSkillReportSchema,
 } from "./types.js";
-export type { ScanDependencies, ScanSkillRequest, ScanSkillReport, Finding, ModelConfig, ThreatLevel, CategoryBucket, RuleAggregation, TokenUsage, TokenUsageBreakdown, ModelBranch, LocaleKey, FetchLike } from "./types.js";
+export type { ScanDependencies, ScanLog, ScanSkillRequest, ScanSkillReport, Finding, ModelConfig, ThreatLevel, CategoryBucket, RuleAggregation, TokenUsage, TokenUsageBreakdown, ModelBranch, LocaleKey, FetchLike } from "./types.js";

@@ -8,7 +8,7 @@ examples/samples/category-report.json
 .env
 .env.*
 !.env.example
-.skill-scanner.json
+.agent-threat-scanner.json
 
 # local IDE and OS files
 .claude/settings.local.json

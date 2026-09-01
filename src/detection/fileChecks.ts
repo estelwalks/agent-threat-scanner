@@ -1,5 +1,5 @@
 import { format, getMessages } from "../i18n/index.js";
-import type { Finding, LocaleKey, SkillFile } from "../types.js";
+import type { Finding, LocaleKey, ScanLog, SkillFile } from "../types.js";
 
 // risky extensions such as executables / macro documents / archives (known script and text extensions are never treated as risk files even if matched)
 const RISK_EXT = [".exe", ".bat", ".cmd", ".com", ".scr", ".bash", ".csh", ".vbs", ".jse", ".wsf", ".wsh", ".jar", ".class", ".app", ".dmg", ".ps1", ".psm1", ".psd1", ".xla", ".xlam", ".xll", ".xlm", ".xlsm", ".docm", ".dotm", ".pptm", ".potm", ".ppam", ".msi", ".msp", ".mst", ".zip", ".rar"];
@@ -55,7 +55,7 @@ function collectSuspiciousIps(content: string): { ips: string[]; line: number; l
  * File-level risk checks maintained by this package.
  * Every check is based solely on the host-provided relative paths and text content; no file paths are opened and no code is executed.
  */
-export function fileLevelScan(allFiles: SkillFile[], _scannedFiles: SkillFile[], locale: LocaleKey, fileHashes: ReadonlyMap<string, string> = new Map()): Finding[] {
+export function fileLevelScan(allFiles: SkillFile[], _scannedFiles: SkillFile[], locale: LocaleKey, fileHashes: ReadonlyMap<string, string> = new Map(), log?: ScanLog): Finding[] {
   const m = getMessages(locale);
   const output: Finding[] = [];
   const base = (
@@ -77,7 +77,9 @@ export function fileLevelScan(allFiles: SkillFile[], _scannedFiles: SkillFile[],
   for (const file of allFiles) {
     const ext = extOf(file.path);
     const binary = file.isBinary || file.content.includes("\0");
-    if ((RISK_EXT.includes(ext) || binary) && !SCRIPT_EXT.includes(ext) && !TEXT_EXT.includes(ext)) {
+    const risky = (RISK_EXT.includes(ext) || binary) && !SCRIPT_EXT.includes(ext) && !TEXT_EXT.includes(ext);
+    log?.(`static:file-check check=file-01 path=${JSON.stringify(file.path)} result=${risky ? "match" : "no-match"}`);
+    if (risky) {
       output.push(base("file-01", "RISK_FILE", file.path, m.fileCheck["file-01"].message, { kind: "remote_execution", severity: "medium", weight: 25, bypass: true }));
     }
   }
@@ -90,16 +92,21 @@ export function fileLevelScan(allFiles: SkillFile[], _scannedFiles: SkillFile[],
   for (const file of allFiles) {
     totalContentLength += file.byteSize ?? Buffer.byteLength(file.content, "utf8");
     // file-02 extremely long file: may hide obfuscated content
-    if ((TEXT_EXT.includes(extOf(file.path)) || SCRIPT_EXT.includes(extOf(file.path))) && file.content.split(/\r?\n/).length > 2000) {
+    const longFile = (TEXT_EXT.includes(extOf(file.path)) || SCRIPT_EXT.includes(extOf(file.path))) && file.content.split(/\r?\n/).length > 2000;
+    log?.(`static:file-check check=file-02 path=${JSON.stringify(file.path)} result=${longFile ? "match" : "no-match"}`);
+    if (longFile) {
       output.push(base("file-02", "LONG_FILE", file.path, m.fileCheck["file-02"].message, { kind: "obfuscation", severity: "medium", weight: 25, bypass: true }));
     }
     // file-03 consecutive newlines: may hide malicious code
-    if (file.content.includes("\n".repeat(10))) {
+    const hiddenByNewlines = file.content.includes("\n".repeat(10));
+    log?.(`static:file-check check=file-03 path=${JSON.stringify(file.path)} result=${hiddenByNewlines ? "match" : "no-match"}`);
+    if (hiddenByNewlines) {
       output.push(base("file-03", "CONSECUTIVE_NEWLINES", file.path, m.fileCheck["file-03"].message, { kind: "obfuscation", severity: "medium", weight: 25, bypass: true }));
     }
   }
   for (const file of allFiles) {
     const suspicious = collectSuspiciousIps(file.content);
+    log?.(`static:file-check check=file-05 path=${JSON.stringify(file.path)} result=${suspicious.ips.length > 0 ? "match" : "no-match"} matches=${suspicious.ips.length}`);
     if (suspicious.ips.length > 0) {
       output.push({
         ...base("file-05", "SUSPICIOUS_EXTERNAL_IP", file.path, format(m.fileCheck["file-05"].message, { ips: suspicious.ips.join(", ") }), { kind: "obfuscation", severity: "high", weight: 30 }),
@@ -107,8 +114,11 @@ export function fileLevelScan(allFiles: SkillFile[], _scannedFiles: SkillFile[],
     }
   }
   // file-04 oversized SKILL content (adapted for the in-memory model: approximates directory size by total text content)
-  if (totalContentLength > 1024 * 1024) {
+  const largeDirectory = totalContentLength > 1024 * 1024;
+  log?.(`static:file-check check=file-04 path="." result=${largeDirectory ? "match" : "no-match"} bytes=${totalContentLength}`);
+  if (largeDirectory) {
     output.push(base("file-04", "LARGE_SKILL_DIR", ".", format(m.fileCheck["file-04"].message, { size: (totalContentLength / 1024 / 1024).toFixed(2) }), { kind: "remote_execution", severity: "medium", weight: 15, bypass: true }));
   }
+  log?.(`static:file-check complete files=${allFiles.length} findings=${output.length}`);
   return output;
 }

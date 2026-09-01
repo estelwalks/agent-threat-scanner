@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { chatJson, BehavioralRiskItemSchema, type BehavioralRiskItem, type ChatMessage } from "./client.js";
-import type { FetchLike, ModelConfig, SkillFile } from "../types.js";
+import type { FetchLike, ModelConfig, ScanLog, SkillFile } from "../types.js";
 import type { TokenUsageCollector } from "./usage.js";
 
 const AgentTurnSchema = z.discriminatedUnion("type", [
@@ -40,14 +40,22 @@ function executeAgentTool(tool: string, args: { path?: string; start?: number; l
 }
 
 /** Pro-model ReAct loop: must produce a final after ≤ maxAgentTurns tool calls; any exception propagates so the caller can fall back. */
-export async function runBehavioralAgent(fetcher: FetchLike, model: ModelConfig, files: SkillFile[], agentSystem: string, agentTask: string, usageCollector?: TokenUsageCollector): Promise<BehavioralRiskItem[]> {
+export async function runBehavioralAgent(fetcher: FetchLike, model: ModelConfig, files: SkillFile[], agentSystem: string, agentTask: string, usageCollector?: TokenUsageCollector, log?: ScanLog): Promise<BehavioralRiskItem[]> {
   const maxTurns = model.maxAgentTurns ?? 12;
   const messages: ChatMessage[] = [{ role: "system", content: agentSystem }, { role: "user", content: agentTask }];
   for (let turn = 0; turn < maxTurns; turn++) {
-    const reply = await chatJson(fetcher, model, model.proModel, messages, AgentTurnSchema, usageCollector ? { collector: usageCollector, context: { model: model.proModel, branch: "multiFileAnalysis" } } : undefined);
-    if (reply.type === "final") return reply.findings;
+    log?.(`model:agent turn=${turn + 1}/${maxTurns} messages=${messages.length}`);
+    const reply = await chatJson(fetcher, model, model.proModel, messages, AgentTurnSchema, usageCollector || log ? { ...(usageCollector ? { collector: usageCollector } : {}), context: { model: model.proModel, branch: "multiFileAnalysis" }, log } : undefined);
+    log?.(`analysis:agent response turn=${turn + 1} type=${reply.type}`);
+    if (reply.type === "final") {
+      log?.(`analysis:agent complete findings=${reply.findings.length} turns=${turn + 1}`);
+      return reply.findings;
+    }
+    log?.(`model:agent tool tool=${reply.tool} turn=${turn + 1}`);
     const result = executeAgentTool(reply.tool, reply.args, files);
+    log?.(`model:agent tool-result tool=${reply.tool} chars=${result.length}`);
     messages.push({ role: "assistant", content: JSON.stringify(reply) }, { role: "user", content: `Tool ${reply.tool} returned:\n${result}` });
   }
+  log?.(`analysis:agent failed reason=turn-limit turns=${maxTurns}`);
   throw new Error("agent turn limit exceeded");
 }

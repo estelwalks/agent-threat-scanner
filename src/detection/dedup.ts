@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { askModel } from "../model/client.js";
 import { buildModelPrompts } from "../model/prompts.js";
-import type { Finding, FetchLike, ModelConfig } from "../types.js";
+import type { Finding, FetchLike, ModelConfig, ScanLog } from "../types.js";
 import type { TokenUsageCollector } from "../model/usage.js";
 
 /** Exact location dedup: rules win; each side keeps the highest weight at a concrete path+line. */
@@ -42,17 +42,25 @@ export async function semanticDedup(
   usageCollector?: TokenUsageCollector,
   /** Optional disk-input view used only for the model payload; returned findings stay unchanged. */
   pathForModel?: (path: string) => string,
+  log?: ScanLog,
 ): Promise<Finding[]> {
-  if (ruleFindings.length === 0 || modelFindings.length === 0) return ruleFindings;
+  log?.(`dedup:semantic start rules=${ruleFindings.length} model=${modelFindings.length}`);
+  if (ruleFindings.length === 0 || modelFindings.length === 0) {
+    log?.("dedup:semantic skipped reason=one-side-empty");
+    return ruleFindings;
+  }
   const prompts = buildModelPrompts();
   try {
     const decision = await askModel(fetcher, model, model.liteModel, prompts.dedup, {
       primary: modelFindings.map((f, index) => ({ index, kind: f.kind, severity: f.severity, path: pathForModel?.(f.path) ?? f.path, line: f.line, message: f.message })),
       secondary: ruleFindings.map((f, index) => ({ index, ruleId: f.ruleId, ruleName: f.ruleName, kind: f.kind, path: pathForModel?.(f.path) ?? f.path, line: f.line, message: f.message })),
-    }, prompts.shapeDedup, DedupDecisionSchema, undefined, usageCollector ? { collector: usageCollector, context: { model: model.liteModel, branch: "semanticDedup" } } : undefined);
+    }, prompts.shapeDedup, DedupDecisionSchema, undefined, usageCollector || log ? { ...(usageCollector ? { collector: usageCollector } : {}), context: { model: model.liteModel, branch: "semanticDedup" }, log } : undefined);
     const drop = new Set(decision.duplicateRuleIndices);
-    return ruleFindings.filter((_, i) => !drop.has(i));
+    const kept = ruleFindings.filter((_, i) => !drop.has(i));
+    log?.(`dedup:semantic complete duplicates=${Math.min(drop.size, ruleFindings.length)} kept=${kept.length}`);
+    return kept;
   } catch {
+    log?.("dedup:semantic failed fallback=keep-rules");
     return ruleFindings;
   }
 }

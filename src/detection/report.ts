@@ -2,7 +2,7 @@ import { format, getMessages } from "../i18n/index.js";
 import { normalizeKind, normalizeSeverity, redact } from "../model/normalize.js";
 import { LLM_SEVERITY_WEIGHTS } from "../types.js";
 import { SEVERITY_RANK } from "./scoring.js";
-import type { Finding, LocaleKey, ScanSkillReport, SkillFile } from "../types.js";
+import type { Finding, LocaleKey, ScanLog, ScanSkillReport, SkillFile } from "../types.js";
 import type { BehavioralRiskItem } from "../model/client.js";
 
 /** Normalizes raw behavioral-model findings into Finding (category/severity mapped to slugs, bilingual copy picked by locale). */
@@ -14,6 +14,7 @@ export function asFindings(
   fileHashes: ReadonlyMap<string, string> = new Map(),
   /** Maps the model's relative path view back to the report's disk paths. */
   modelPathToReportPath?: ReadonlyMap<string, string>,
+  log?: ScanLog,
 ): Finding[] {
   const m = getMessages(locale);
   const validPaths = new Set(files.map((file) => file.path)); const fallback = files[0]?.path ?? "SKILL.md";
@@ -22,7 +23,10 @@ export function asFindings(
   for (let index = 0; index < items.length; index++) {
     const item = items[index];
     const kind = normalizeKind(item.category);
-    if (!kind) continue;
+    if (!kind) {
+      log?.(`analysis:normalize phase=${phase} index=${index} result=dropped reason=unknown-category`);
+      continue;
+    }
     const severity = normalizeSeverity(item.severity);
     const mappedPath = modelPathToReportPath?.get(item.file_path);
     // Disk-input models receive only relative aliases, but accept a valid
@@ -33,7 +37,10 @@ export function asFindings(
       ? mappedPath ?? (validPaths.has(item.file_path) ? item.file_path : undefined)
       : item.file_path;
     const path = item.file_path ? (candidatePath && validPaths.has(candidatePath) ? candidatePath : null) : fallback;
-    if (!path) continue; // finding names a non-scanned file (e.g. the bundled attack-pattern library) → drop
+    if (!path) {
+      log?.(`analysis:normalize phase=${phase} index=${index} result=dropped reason=unscanned-file`);
+      continue; // finding names a non-scanned file (e.g. the bundled attack-pattern library) → drop
+    }
     const fileHash = fileHashes.get(path);
     output.push({
       id: `model:${phase}:${index}`, kind, severity, source: "model",
@@ -45,7 +52,9 @@ export function asFindings(
       weight: LLM_SEVERITY_WEIGHTS[severity], path, ...(fileHash ? { fileHash } : {}),
       ...(item.line_number > 0 ? { line: item.line_number } : {}),
     });
+    log?.(`analysis:normalize phase=${phase} index=${index} result=accepted kind=${kind} severity=${severity} line=${item.line_number > 0 ? item.line_number : 0}`);
   }
+  log?.(`analysis:normalize complete phase=${phase} input=${items.length} output=${output.length}`);
   return output;
 }
 

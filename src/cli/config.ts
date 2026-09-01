@@ -83,18 +83,19 @@ export function parseDotEnv(text: string): Record<string, string> {
 }
 
 /** Loads `cwd/.env` into `env` without overriding variables that are already set. */
-export function loadDotEnv(env: NodeJS.ProcessEnv, cwd: string): void {
+export function loadDotEnv(env: NodeJS.ProcessEnv, cwd: string): boolean {
   let text: string;
-  try { text = readFileSync(path.join(cwd, ".env"), "utf-8"); } catch { return; }
+  try { text = readFileSync(path.join(cwd, ".env"), "utf-8"); } catch { return false; }
   for (const [key, value] of Object.entries(parseDotEnv(text))) {
     if (env[key] === undefined) env[key] = value;
   }
+  return true;
 }
 
 /** Merges config per field with precedence: CLI flags > JSON config file > LLM_* env vars. */
 export function loadConfig(args: ParsedArgs, env: NodeJS.ProcessEnv, cwd: string): ResolvedConfig {
   const model = envModel(env);
-  const configPath = args.config ?? path.join(cwd, ".skill-scanner.json");
+  const configPath = args.config ?? path.join(cwd, ".agent-threat-scanner.json");
   let config: ConfigFile = {};
   if (args.config) {
     config = readConfigFile(configPath);

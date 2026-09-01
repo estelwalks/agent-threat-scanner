@@ -1,13 +1,13 @@
 {
-  "name": "skill-scanner",
+  "name": "@l3m0nc9/agent-threat-scanner",
   "version": "0.2.0",
   "private": false,
-  "description": "Privacy-preserving security scanner for Agent Skills (in-memory files or disk paths)",
+  "description": "Privacy-preserving security scanner for agent artifacts (in-memory files or disk paths)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "skill-scanner": "dist/cli.js"
+    "agent-threat-scan": "dist/cli.js"
   },
   "exports": {
     ".": {
@@ -21,12 +21,12 @@
     "README.en.md",
     "README.ja.md",
     "README.ko.md",
-    ".skill-scanner.example.json",
+    ".agent-threat-scanner.example.json",
     "LICENSE",
     "NOTICE"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "scripts": {
     "build": "tsup src/index.ts src/cli.ts --format esm --dts --clean --sourcemap && node scripts/copy-prompts.mjs",
@@ -36,7 +36,9 @@
     "prepack": "npm run build"
   },
   "keywords": [
-    "skill",
+    "agent",
+    "mcp",
+    "ai",
     "security",
     "scanner",
     "electron"
@@ -45,11 +47,11 @@
   "author": "l3m0nc9",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/l3m0nc9/skill-scanner.git"
+    "url": "git+https://github.com/l3m0nc9/agent-threat-scanner.git"
   },
-  "homepage": "https://github.com/l3m0nc9/skill-scanner#readme",
+  "homepage": "https://github.com/l3m0nc9/agent-threat-scanner#readme",
   "bugs": {
-    "url": "https://github.com/l3m0nc9/skill-scanner/issues"
+    "url": "https://github.com/l3m0nc9/agent-threat-scanner/issues"
   },
   "publishConfig": {
     "access": "public",

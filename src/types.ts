@@ -118,4 +118,6 @@ export type TokenUsage = z.infer<typeof TokenUsageSchema>;
 export type TokenUsageBreakdown = z.infer<typeof TokenUsageBreakdownSchema>;
 export type ModelBranch = (typeof MODEL_BRANCHES)[number];
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
-export interface ScanDependencies { fetch?: FetchLike; log?: (message: string) => void }
+/** Optional progress sink used by the CLI's --verbose mode. Log messages must contain metadata only. */
+export type ScanLog = (message: string) => void;
+export interface ScanDependencies { fetch?: FetchLike; log?: ScanLog }

@@ -29,7 +29,7 @@ import { scanSkill } from "../dist/index.js";
 
 const target = process.argv[2];
 if (!target) {
-  console.error("Missing target directory. Usage: node examples/run-full-scan.mjs <skill-dir>");
+  console.error("Missing target directory. Usage: node examples/run-full-scan.mjs <artifact-dir>");
   process.exit(1);
 }
 if (!fs.existsSync(target)) {

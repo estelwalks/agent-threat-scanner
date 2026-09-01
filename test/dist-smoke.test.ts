@@ -10,7 +10,7 @@ import { ScanSkillReportSchema } from "../src/types.js";
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distCli = join(repository, "dist", "cli.js");
 const packageJson = JSON.parse(readFileSync(join(repository, "package.json"), "utf8")) as { version: string };
-const scratch = mkdtempSync(join(tmpdir(), "skill-scanner-dist-contract-"));
+const scratch = mkdtempSync(join(tmpdir(), "agent-threat-scanner-dist-contract-"));
 const childEnv: NodeJS.ProcessEnv = {
   PATH: process.env.PATH,
   NODE_OPTIONS: process.env.NODE_OPTIONS,

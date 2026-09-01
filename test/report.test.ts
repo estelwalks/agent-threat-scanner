@@ -83,7 +83,7 @@ describe("asFindings", () => {
     expect(out[0]).toMatchObject({ kind: "remote_execution", severity: "high", source: "model", path: "SKILL.md", line: 2, ruleName: "Model finding", kindDisplay: "Remote Code/Command Execution", fileHash: "f".repeat(64), reasoning: "r" });
   });
   it("maps relative disk aliases and accepts a valid legacy absolute response path", () => {
-    const diskPath = "/tmp/skill-scanner-regression/SKILL.md";
+    const diskPath = "/tmp/agent-threat-scanner-regression/SKILL.md";
     const diskFiles: SkillFile[] = [{ path: diskPath, content: "safe", isBinary: false }];
     const aliases = new Map([["SKILL.md", diskPath]]);
     const relative = asFindings([riskItem({ file_path: "SKILL.md" })], diskFiles, "single", "en-US", new Map(), aliases);

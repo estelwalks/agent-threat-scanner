@@ -85,7 +85,7 @@ const coverage = {};
 for (const r of kindSamples) coverage[r.expected.kind] = r.detected ? "detected" : "missed";
 
 const final = {
-  engine: { name: "skill-scanner", engineVersion: ENGINE_VERSION, rulesVersion: RULES_VERSION },
+  engine: { name: "agent-threat-scanner", engineVersion: ENGINE_VERSION, rulesVersion: RULES_VERSION },
   generatedAt: new Date().toISOString(),
   mode: "quick",
   note: "quick 静态扫描（规则 + 文件级检查），确定性覆盖参考实现的 11 类风险；full 的模型语义分析另行验证。",

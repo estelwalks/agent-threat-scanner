@@ -1,4 +1,4 @@
-skill-scanner
+agent-threat-scanner
 Copyright (c) 2026 l3m0nc9 contributors
 
 This repository contains first-party TypeScript scanner code, security rules,

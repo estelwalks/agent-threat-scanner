@@ -1,7 +1,7 @@
 import { STATIC_RULES } from "../rules/index.js";
 import { getMessages } from "../i18n/index.js";
 import { redact } from "../model/normalize.js";
-import type { Finding, LocaleKey, SkillFile } from "../types.js";
+import type { Finding, LocaleKey, ScanLog, SkillFile } from "../types.js";
 
 const LEGACY_I18N_RULE_ID: Record<string, string> = {
   RM_RF_ROOT: "builtin-12", RM_RF_HOME: "builtin-12", DD_WIPE: "builtin-13", MKFS_FORMAT: "builtin-13", DISKUTIL_ERASE: "builtin-40",
@@ -60,20 +60,30 @@ const COMPILED_RULES = STATIC_RULES.map((rule) => {
 });
 
 /** Line-by-line static-rule matching, including fileTypes and the 512 KiB guard. */
-export function staticScan(files: SkillFile[], locale: LocaleKey, fileHashes: ReadonlyMap<string, string> = new Map()): Finding[] {
+export function staticScan(files: SkillFile[], locale: LocaleKey, fileHashes: ReadonlyMap<string, string> = new Map(), log?: ScanLog): Finding[] {
   const m = getMessages(locale);
   const output: Finding[] = [];
   for (const file of files) {
-    if (Buffer.byteLength(file.content, "utf8") > 512 * 1024) continue;
+    const bytes = Buffer.byteLength(file.content, "utf8");
+    if (bytes > 512 * 1024) {
+      log?.(`static:file skipped path=${JSON.stringify(file.path)} reason=content-over-512KiB bytes=${bytes}`);
+      continue;
+    }
     const ext = extOf(file.path);
     const fileHash = fileHashes.get(file.path);
     const lines = file.content.split("\n");
+    const fileStart = output.length;
+    log?.(`static:file start path=${JSON.stringify(file.path)} chars=${file.content.length} bytes=${bytes} lines=${lines.length} rules=${COMPILED_RULES.length}`);
     for (const { rule, test } of COMPILED_RULES) {
-      if (rule.fileTypes && !rule.fileTypes.includes(ext)) continue;
+      if (rule.fileTypes && !rule.fileTypes.includes(ext)) {
+        log?.(`static:rule file=${JSON.stringify(file.path)} rule=${rule.id} result=skipped reason=file-type`);
+        continue;
+      }
       const copy = localizedRuleCopy(rule, locale);
+      let matches = 0;
       for (const [offset, line] of lines.entries()) {
-        if (rule.fileTypes && !rule.fileTypes.includes(ext)) continue;
         if (test(line)) {
+          matches += 1;
           output.push({
             id: `${rule.id}:${fileHash ?? file.path}:${offset + 1}`, kind: rule.kind, severity: rule.severity, source: "static",
             kindDisplay: m.kind[rule.kind], severityDisplay: m.severity[rule.severity],
@@ -83,7 +93,9 @@ export function staticScan(files: SkillFile[], locale: LocaleKey, fileHashes: Re
           });
         }
       }
+      log?.(`static:rule file=${JSON.stringify(file.path)} rule=${rule.id} result=${matches > 0 ? "match" : "no-match"} matches=${matches}`);
     }
+    log?.(`static:file complete path=${JSON.stringify(file.path)} findings=${output.length - fileStart}`);
   }
   return output;
 }

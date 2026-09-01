@@ -35,7 +35,7 @@ function cleanModel(captured: string[] = []) {
 
 describe("disk input contract", () => {
   let dir: string;
-  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "skill-scanner-input-")); });
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "agent-threat-scanner-input-")); });
   afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
   it("keeps ignored project-tree files visible to file checks but not rules", async () => {

@@ -1,6 +1,6 @@
 import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readSync, readdirSync, realpathSync, statSync, type Stats } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
-import type { ScanSkillReport, SkillFile } from "./types.js";
+import type { ScanLog, ScanSkillReport, SkillFile } from "./types.js";
 
 /** Mirrors ScanSkillRequestSchema `files` max length. */
 export const MAX_FILES = 500;
@@ -66,15 +66,17 @@ export function detectBinary(buf: Buffer): boolean {
 
 interface WalkedFile { path: string; analysisVisible: boolean; skippedReason?: string }
 
-function walk(dir: string, ignored = false): WalkedFile[] {
+function walk(dir: string, ignored = false, log?: ScanLog): WalkedFile[] {
   const out: WalkedFile[] = [];
-  for (const ent of readdirSync(dir, { withFileTypes: true })) {
+  const entries = readdirSync(dir, { withFileTypes: true });
+  log?.(`input:directory path=${JSON.stringify(resolve(dir))} entries=${entries.length}${ignored ? " ignored=true" : ""}`);
+  for (const ent of entries) {
     const p = join(dir, ent.name);
     const analysisVisible = !ignored && !isProjectTreeIgnoredName(ent.name);
     // Never descend through or read a symlink. Apart from being an explicit policy,
     // this prevents a directory entry from escaping the caller's scan root.
     if (ent.isSymbolicLink()) out.push({ path: p, analysisVisible: false, skippedReason: "symbolic link was not scanned" });
-    else if (ent.isDirectory()) out.push(...walk(p, !analysisVisible));
+    else if (ent.isDirectory()) out.push(...walk(p, !analysisVisible, log));
     else out.push({ path: p, analysisVisible });
   }
   return out;
@@ -120,29 +122,36 @@ function readRegularFile(path: string): Buffer {
  * collected in `skipped` (never thrown) so the report can surface them as `partial`;
  * missing targets, too many files and empty scans throw.
  */
-export async function collectPaths(paths: string[]): Promise<CollectedInput> {
+export async function collectPaths(paths: string[], log?: ScanLog): Promise<CollectedInput> {
   const files: SkillFile[] = [];
   const excludedFiles: SkillFile[] = [];
   const analysisPaths: string[] = [];
   const modelRoots: string[] = [];
   const skipped: ScanSkillReport["skippedFiles"] = [];
+  const skip = (path: string, reason: string): void => {
+    const reportPath = resolve(path);
+    skipped.push({ path: reportPath, reason });
+    log?.(`input:file skipped path=${JSON.stringify(reportPath)} reason=${JSON.stringify(reason)}`);
+  };
   const seen = new Set<string>();
   let singleSkillFile = paths.length === 1;
   for (const target of paths) {
+    log?.(`input:target start path=${JSON.stringify(resolve(target))}`);
     let st: Stats;
     let targetLstat: Stats;
     try { targetLstat = lstatSync(target); } catch { throw new Error(`path not found: ${target}`); }
     const targetReportPath = resolve(target);
     if (targetLstat.isSymbolicLink()) {
       singleSkillFile = false;
-      skipped.push({ path: targetReportPath, reason: "symbolic link was not scanned" });
+      skip(targetReportPath, "symbolic link was not scanned");
       continue;
     }
     try { st = statSync(target); } catch { throw new Error(`path not found: ${target}`); }
     const isDir = st.isDirectory();
+    log?.(`input:target discovered path=${JSON.stringify(targetReportPath)} type=${isDir ? "directory" : "file"}`);
     let scanRoot: string;
     try { scanRoot = realpathSync(isDir ? target : dirname(target)); } catch {
-      skipped.push({ path: targetReportPath, reason: "unreadable path" });
+      skip(targetReportPath, "unreadable path");
       continue;
     }
     modelRoots.push(resolve(isDir ? target : dirname(target)));
@@ -152,64 +161,71 @@ export async function collectPaths(paths: string[]): Promise<CollectedInput> {
     } else {
       singleSkillFile &&= basename(target) === "SKILL.md";
     }
-    const list = isDir ? walk(target) : [{ path: target, analysisVisible: true }];
+    const list = isDir ? walk(target, false, log) : [{ path: target, analysisVisible: true }];
     for (const item of list) {
       const file = item.path;
       const reportPath = resolve(file);
-      if (!isSafePath(reportPath)) { skipped.push({ path: file, reason: "unsafe path" }); continue; }
-      if (item.skippedReason) { skipped.push({ path: reportPath, reason: item.skippedReason }); continue; }
-      if (seen.has(reportPath)) { skipped.push({ path: reportPath, reason: "duplicate path" }); continue; }
+      log?.(`input:file inspect path=${JSON.stringify(reportPath)}${item.analysisVisible ? "" : " analysisVisible=false"}`);
+      if (!isSafePath(reportPath)) { skip(reportPath, "unsafe path"); continue; }
+      if (item.skippedReason) { skip(reportPath, item.skippedReason); continue; }
+      if (seen.has(reportPath)) { skip(reportPath, "duplicate path"); continue; }
       seen.add(reportPath);
       let fileStat: Stats;
-      try { fileStat = lstatSync(file); } catch { skipped.push({ path: reportPath, reason: "unreadable file" }); continue; }
-      if (fileStat.isSymbolicLink()) { skipped.push({ path: reportPath, reason: "symbolic link was not scanned" }); continue; }
-      if (!fileStat.isFile()) { skipped.push({ path: reportPath, reason: "special file was not scanned" }); continue; }
+      try { fileStat = lstatSync(file); } catch { skip(reportPath, "unreadable file"); continue; }
+      if (fileStat.isSymbolicLink()) { skip(reportPath, "symbolic link was not scanned"); continue; }
+      if (!fileStat.isFile()) { skip(reportPath, "special file was not scanned"); continue; }
       let realFilePath: string;
-      try { realFilePath = realpathSync(file); } catch { skipped.push({ path: reportPath, reason: "unreadable file" }); continue; }
-      if (!isWithinRoot(scanRoot, realFilePath)) { skipped.push({ path: reportPath, reason: "path escapes scan root" }); continue; }
+      try { realFilePath = realpathSync(file); } catch { skip(reportPath, "unreadable file"); continue; }
+      if (!isWithinRoot(scanRoot, realFilePath)) { skip(reportPath, "path escapes scan root"); continue; }
       // Check the byte size before opening/reading. A larger byte bound is used
       // to preserve the documented character limit for multi-byte UTF-8 text.
       if (fileStat.size > MAX_FILE_CONTENT_BYTES) {
         let prefix: Buffer;
         try { prefix = readPrefix(file, 1024); } catch (error) {
-          skipped.push({ path: reportPath, reason: `unreadable file: ${(error as Error).message}` });
+          skip(reportPath, `unreadable file: ${(error as Error).message}`);
           continue;
         }
         const binary = detectBinary(prefix);
         if (binary) {
-          skipped.push({ path: reportPath, reason: "binary file was not scanned" });
+          skip(reportPath, "binary file was not scanned");
           if (files.length + excludedFiles.length >= MAX_FILES) throw new Error(`too many files: ${MAX_FILES} max`);
           files.push({ path: reportPath, content: "", isBinary: true, byteSize: fileStat.size });
+          log?.(`input:file loaded path=${JSON.stringify(reportPath)} bytes=${fileStat.size} chars=0 binary=true analysisVisible=${item.analysisVisible}`);
         } else {
-          skipped.push({ path: reportPath, reason: "content exceeds 2,000,000 char limit" });
+          skip(reportPath, "content exceeds 2,000,000 char limit");
           if (files.length + excludedFiles.length >= MAX_FILES) throw new Error(`too many files: ${MAX_FILES} max`);
           excludedFiles.push({ path: reportPath, content: "", isBinary: false, byteSize: fileStat.size });
+          log?.(`input:file loaded path=${JSON.stringify(reportPath)} bytes=${fileStat.size} chars=0 excluded=true analysisVisible=${item.analysisVisible}`);
         }
         continue;
       }
       let buf: Buffer;
-      try { buf = readRegularFile(file); } catch (error) { skipped.push({ path: reportPath, reason: `unreadable file: ${(error as Error).message}` }); continue; }
+      try { buf = readRegularFile(file); } catch (error) { skip(reportPath, `unreadable file: ${(error as Error).message}`); continue; }
       if (basename(file) === ".DS_Store") {
         if (files.length + excludedFiles.length >= MAX_FILES) throw new Error(`too many files: ${MAX_FILES} max`);
         files.push({ path: reportPath, content: "", isBinary: false, byteSize: fileStat.size });
+        log?.(`input:file loaded path=${JSON.stringify(reportPath)} bytes=${fileStat.size} chars=0 binary=false analysisVisible=${item.analysisVisible}`);
         continue;
       }
       if (detectBinary(buf)) {
-        skipped.push({ path: reportPath, reason: "binary file was not scanned" });
+        skip(reportPath, "binary file was not scanned");
         if (files.length + excludedFiles.length >= MAX_FILES) throw new Error(`too many files: ${MAX_FILES} max`);
         files.push({ path: reportPath, content: "", isBinary: true, byteSize: fileStat.size });
+        log?.(`input:file loaded path=${JSON.stringify(reportPath)} bytes=${fileStat.size} chars=0 binary=true analysisVisible=${item.analysisVisible}`);
         continue;
       }
       const content = buf.toString("utf-8");
       if (content.length > MAX_FILE_CONTENT_CHARS) {
-        skipped.push({ path: reportPath, reason: "content exceeds 2,000,000 char limit" });
+        skip(reportPath, "content exceeds 2,000,000 char limit");
         if (files.length + excludedFiles.length >= MAX_FILES) throw new Error(`too many files: ${MAX_FILES} max`);
         excludedFiles.push({ path: reportPath, content: "", isBinary: false, byteSize: fileStat.size });
+        log?.(`input:file loaded path=${JSON.stringify(reportPath)} bytes=${fileStat.size} chars=${content.length} excluded=true analysisVisible=${item.analysisVisible}`);
         continue;
       }
       if (files.length + excludedFiles.length >= MAX_FILES) throw new Error(`too many files: ${MAX_FILES} max`);
       files.push({ path: reportPath, content, isBinary: false, byteSize: fileStat.size });
       if (item.analysisVisible) analysisPaths.push(reportPath);
+      log?.(`input:file loaded path=${JSON.stringify(reportPath)} bytes=${fileStat.size} chars=${content.length} binary=false analysisVisible=${item.analysisVisible}`);
     }
   }
   if (files.length === 0 && excludedFiles.length === 0 && skipped.length === 0) throw new Error("no files found");

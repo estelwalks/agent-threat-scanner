@@ -1,223 +1,236 @@
 <div align="center">
 
-[中文](README.md) · [English](README.en.md) · **日本語** · [한국어](README.ko.md)
+# Agent Threat Scanner
+
+Agent のファイル資産をローカル優先で検査するセキュリティスキャナです。プロンプトインジェクション、コマンド実行、データ外部送信、機密ファイルアクセスなどを検出します。
+
+[![CI](https://github.com/l3m0nc9/agent-threat-scanner/actions/workflows/ci.yml/badge.svg)](https://github.com/l3m0nc9/agent-threat-scanner/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/%40l3m0nc9%2Fagent-threat-scanner)](https://www.npmjs.com/package/@l3m0nc9/agent-threat-scanner)
+[![Node.js >=24](https://img.shields.io/badge/node-%3E%3D24-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+[中文](README.md) · [English](README.en.md) · [한국어](README.ko.md)
 
 </div>
 
-# skill-scanner
+## 概要
 
-Agent Skill 向けのプライバシー保護型セキュリティスキャナ（ESM / TypeScript）。提供されたファイルを実行することも、
-API キーを永続化することもありません。スキャンはデフォルトでプライバシー保護型です：メモリ内の `files`
-（path + content、ディスク I/O なし）を渡すか、ファイル/ディレクトリの `paths` を渡すとスキャナがディスクから読み取ります。
-`quick` モードは静的ルールを実行します。`full` モードでは **OpenAI Responses**、**OpenAI Chat Completions**、または **Anthropic Messages** API による
-モデルレビューを追加します。API キーはリクエストでのみ使用され、保存も返却もされません。
+Agent Threat Scanner は ESM + TypeScript のライブラリと CLI です。ローカル開発、コードレビュー、CI で利用でき、検査対象のファイルを実行しません。
 
-```ts
-import { scanSkill } from "skill-scanner";
-const report = await scanSkill({ mode: "quick", files: [{ path: "SKILL.md", content: "# Demo" }] });
-// またはファイル/ディレクトリを直接スキャン（ディスクから読み取り）：
-const reportFromPath = await scanSkill({ mode: "quick", paths: ["/path/to/skill_dir"] });
-```
+現行リリースは、ファイルまたはディレクトリとして渡された Agent Skill の内容を対象にします。MCP サーバー設定と完全な Agent プロジェクトの専用アダプタはロードマップに含まれます。
 
-## インストールとクイックスタート
+## 特徴
 
-Node.js 20 以降が必要です：
+- **ローカル優先**：メモリ上のファイルを渡せます。API キーはモデルリクエスト中だけ使用します。
+- **静的 + セマンティック**：quick は決定的なルール、full はモデルによるルール確認と振る舞い分析を追加します。
+- **リスク中心**：コマンド実行、データ外部送信、シークレット、永続化、権限昇格、プロンプトインジェクションを検査します。
+- **組み込み可能**：TypeScript API、Zod schema、安定した risk slug、内容アドレス型の finding ID を提供します。
+- **監査可能**：分岐の状態、スキップしたファイル、ルール集計、スコア、token 使用量をレポートします。
 
-```bash
-npm install skill-scanner
+## クイックスタート
 
-# グローバルインストールなしで CLI を実行
-npx skill-scanner /path/to/skill_dir --quick
-```
+Node.js 24 以降が必要です。
 
-`quick` モードに API キーは不要です。`full` モードでは `LLM_API_KEY`（および endpoint とモデル設定）を環境変数で指定し、キーをソースコードに書いたりコミットしたりしないでください。
+~~~bash
+npm install @l3m0nc9/agent-threat-scanner
 
-## 検出機能
+npx agent-threat-scan ./path/to/skill --quick
 
-- **76 件の静的ルール**が **11 種類のリスク**をカバー（`remote_execution` / `command_injection` /
-  `data_exfiltration` / `secret_access` / `persistence` / `destructive` / `obfuscation` /
-  `privilege_escalation` / `sensitive_file_access` / `network_abuse` /
-  `prompt_injection`）。言語別のコマンドインジェクションルール、Windows/macOS 固有パターン、
-  IOC ブロックリスト（C2 IP、外部送信/OAST ドメイン、悪意のある GitHub アカウント、マルウェアハッシュ）を含む。
-- **ファイルレベルチェック**（`RISK_FILE` など）：リスク拡張子、超大コンテンツ（>1MB）、
-  極端に長いファイル（>2000 行）、連続改行による隠蔽、不審な公開 IP（DNS/CDN ホワイトリスト付き）。
-- **ルール検証**：`full` モードでは lite モデルが非 bypass の静的ヒットを 1 件ずつ検証し、誤検知を除去します。
-  IOC とファイルレベルのヒットは高信頼のため、検証はスキップされます。
-- **モデル解析**：`SKILL.md` だけの入力では `singleFileAnalysis`（pro）、複数ファイルでは `multiFileAnalysis`（pro）を実行します。後者は
-  インメモリファイル上で **ReAct エージェントループ**（ツール `list_files` / `read_file` / `grep`、
-  ≤ `maxAgentTurns`、デフォルト 12）を実行し、ファイル間の振る舞いを追跡します——失敗時は
-  シングルショットにフォールバックします。モデルに送るファイルごとのコンテンツには上限があり
-  （先頭＋末尾 各 30K 文字、`contextWindowTokens` で引き上げ可能）、モデルが返すカテゴリは
-  ローカライズ/英語エイリアスから正規の slug に正規化されます。
-- **重複排除**：同じ file+line でルールヒットと衝突するモデル発見は削除されます（ルール優先）。
-  その後、lite モデルによる**意味的重複排除**が、モデル発見と同じリスクを説明するルールヒットを除去します（モデル優先）。
+# プロジェクトへ追加せず一度だけ実行
+npx --yes --package @l3m0nc9/agent-threat-scanner agent-threat-scan ./path/to/skill --quick
+~~~
 
-## スコアリング
+quick モードに API キーは不要です。対象は SKILL.md を含むディレクトリ、または単一ファイルです。
 
-減点方式で、0–100 点のスコアが高いほど安全です：
-`riskScore = max(0, 100 − Σ ルール重み [各 ruleId につき 1 回] − Σ モデル発見の重み)`。
-`threatLevel` は 5 段階（critical/high/medium/low/none）にマッピングされます。`verdict` は
-`block`（critical/high）/ `warn`（medium）/ `allow`（low/none）、
-発見ゼロの部分スキャンでは `unknown`（安全とは判定しない）。
+### TypeScript から利用
 
-## レポート
+~~~ts
+import { scanSkill } from "@l3m0nc9/agent-threat-scanner";
 
-レポート（Zod 検証済み）には `findings`（言語非依存の `kind`/`severity` slug に加え、ローカライズされた
-`kindDisplay`/`severityDisplay`）、`rules`（ruleId ごとに集計された静的発見。`count` と個別 `matches`）、
-`branches`（static/ruleReview/singleFileAnalysis/multiFileAnalysis。complete/skipped/failed）、
-`skippedFiles`、`categories`（種類ごとの件数 / 最高深刻度 / 総重み）、`threatLevel`、`threatLevelDisplay`、
-`locale`、`contentHash`、`riskScore` が含まれます。抜粋はシークレットがマスクされます。`files` モードでは、パスとコンテンツはディスクから読み取られません。`paths` モードでは、レポートの `path` はディスク上の絶対パスになります。各 finding は `fileHash`（path+content の SHA-256）を持ち、`id` は `ruleId:fileHash:line` で、コンテンツアドレス型でありパスを漏らしません。モデル発見は `reasoning` の判定理由を持ち、`message`/`remediation` はモデルがリクエストの locale に応じて提供します（zh-CN は中国語版）。モデル分析はプロジェクト内蔵の英語プロンプト（`src/model/prompts/*.md`）を使用し、中国語のバリエーションは `*.zh.md` として保持しています。
+const report = await scanSkill({
+  mode: "quick",
+  files: [
+    { path: "SKILL.md", content: "# Demo\nFormat local markdown files." }
+  ]
+});
 
-## 国際化（locale）
+console.log(report.verdict, report.riskScore);
+~~~
 
-リクエストで `locale: "zh-CN" | "en-US" | "ja-JP" | "ko-KR"` を指定できます（デフォルト `zh-CN`）。
-スキャン結果のルール名・説明・修正提案・サマリーはその locale で生成されます。
-`kind`/`severity`/`verdict`/`contentHash`/ルール ID は言語非依存のままです。
-レポートは `locale` と `contentHash`（ソート済み path+content の SHA-256）を保持するため、
-ホストは `contentHash + scannerVersion + rulesVersion + mode + locale` を言語分離されたキャッシュキーとして使えます。
-`report.locale !== 現在の言語` の場合は「再スキャンが必要」として、そのレポートを直接再利用しないでください。
+ホスト側で読み取りを許可したパスを渡すこともできます。
 
-## モジュール構成
+~~~ts
+const report = await scanSkill({
+  mode: "quick",
+  paths: ["./my-skill"]
+});
+~~~
 
-```
-src/
-  i18n/        ローカライズ済みリソース（zh-CN / en-US / ja-JP / ko-KR）
-  rules/       76 件の静的ルール + メタデータ（言語非依存）
-  detection/   静的スキャン / ファイルレベルチェック / 重複排除 / スコアリング / レポート集計
-  model/       トランスポート（OpenAI Responses / Chat Completions / Anthropic）/ エージェントループ / 正規化 / プロンプト
-  scanner.ts   オーケストレータ
-  types.ts     Zod スキーマ
-```
+files と paths は同時に指定できません。files モードでは呼び出し側が渡した内容だけを処理します。
 
-## LLM 設定とテスト（full モード）
+## 検出範囲
 
-`model` は 3 つのプロトコルに対応し、`provider`（`"openai-responses"`、`"openai-completions"`、`"anthropic"`）で指定します。
-旧値 `"openai"` も引き続き使用でき、`"openai-completions"` にマッピングされます。
-省略時は endpoint から自動検出：`anthropic`/`claude` を含むか `/messages` で終わる → anthropic、
-`/responses` で終わる → openai-responses、それ以外 → openai-completions。
+現行エンジンには 76 の静的ルールと 11 種類のリスクがあります。
 
-| provider | endpoint 規約 | 実際のリクエスト | 認証ヘッダー |
-|---|---|---|---|
-| `openai-responses` | ベース URL（例 `https://api.openai.com/v1`） | `/responses` を追記 | `Authorization: Bearer <key>` |
-| `openai-completions` | ベース URL（例 `https://api.openai.com/v1`） | `/chat/completions` を追記 | `Authorization: Bearer <key>` |
-| `anthropic` | `https://api.anthropic.com/v1`（`/v1` は省略可） | `/messages` を追記 | `x-api-key` + `anthropic-version: 2023-06-01` |
-| `openai`（旧値） | `openai-completions` と同じ | `/chat/completions` を追記 | `Authorization: Bearer <key>` |
+| リスク | 例 |
+|---|---|
+| remote_execution | リモート取得後の実行、コールバック、コマンド取得 |
+| command_injection | shell・インタプリタ呼び出し、危険な引数生成 |
+| data_exfiltration | 未承認アップロード、外部送信、不審な telemetry |
+| secret_access | 認証情報、token、クラウドキー、認証ファイル |
+| persistence | 起動項目、スケジュールタスク、hook、永続的変更 |
+| destructive | 削除、上書き、破壊的なシステム操作 |
+| obfuscation | エンコード、隠し payload、不審なデコード |
+| privilege_escalation | sudo、権限変更、高権限実行 |
+| sensitive_file_access | SSH、クラウド認証情報、ブラウザデータ |
+| network_abuse | 不審な IP、C2/OAST ドメイン、異常な通信 |
+| prompt_injection | 指示の上書き、コンテキスト漏えい、境界の弱体化 |
 
-実行例（`examples/run-full-scan.mjs` が環境変数を読み、`model` を組み立て、ディレクトリに対して full スキャンを実行）：
+危険な拡張子、過大な内容、極端に長いファイル、隠しテキスト、不審な公開 IP のファイル検査と IOC ブロックリストも含みます。
 
-```bash
-# OpenAI Responses
-LLM_PROVIDER=openai-responses LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
-LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
-node examples/run-full-scan.mjs /path/to/skill_dir
+## スキャンモード
 
-# OpenAI Chat Completions 互換（OpenAI / DeepSeek / vLLM / Ollama ...）
-LLM_PROVIDER=openai-completions LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
-LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
-node examples/run-full-scan.mjs /path/to/skill_dir
-
-# LLM_PROVIDER を省略すると openai-completions を使用
-LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
-LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
-node examples/run-full-scan.mjs /path/to/skill_dir
-
-# Anthropic
-LLM_PROVIDER=anthropic LLM_ENDPOINT=https://api.anthropic.com/v1 LLM_API_KEY=sk-ant-... \
-LLM_LITE_MODEL=claude-sonnet-5 LLM_PRO_MODEL=claude-opus-5 \
-node examples/run-full-scan.mjs /path/to/skill_dir
-```
-
-対応環境変数：
-
-| 変数 | 必須 | 説明 |
+| モード | 用途 | 動作 |
 |---|---|---|
-| `LLM_PROVIDER` | いいえ | `openai-responses` / `openai-completions` / `anthropic`；旧値 `openai` は `openai-completions` にマッピング。省略時は endpoint から自動検出 |
-| `LLM_ENDPOINT` | はい | ベース URL（上記 endpoint 規約を参照） |
-| `LLM_API_KEY` | はい | API キー（リクエストでのみ使用、保存されない） |
-| `LLM_LITE_MODEL` | はい | ルール検証 + 意味的重複排除用モデル |
-| `LLM_PRO_MODEL` | はい | 単一/複数ファイル挙動解析用モデル |
-| `LLM_TIMEOUT_MS` | いいえ | 呼び出しごとのタイムアウト、デフォルト 120000 |
-| `LLM_CONTEXT_WINDOW_TOKENS` | いいえ | モデルのコンテキストウィンドウ（トークン）。例 `1000000` は 1M。宣言するとモデルに送るコンテンツ上限を引き上げ |
-| `LLM_MAX_AGENT_TURNS` | いいえ | multiFileAnalysis 挙動エージェントの最大ツール呼び出し回数、デフォルト 12 |
-| `LLM_LOCALE` | いいえ | `zh-CN`/`en-US`/`ja-JP`/`ko-KR`、デフォルト `zh-CN` |
+| quick | pre-commit、ローカル確認、モデルなしの環境 | 静的ルール + ファイル検査 |
+| full | 高リスク変更、リリース前レビュー | quick + lite モデルのルール確認 + pro モデルの振る舞い分析 |
 
-これらの変数をプロジェクトルートの `.env`（gitignore 済み）に書いて、
-`set -a; source .env; set +a` の後に実行することもできます。
+単一の SKILL.md には単一ファイル分析を、多ファイル入力には list_files、read_file、grep を使う振る舞い分析ループを実行します。モデル分岐に失敗しても静的結果は保持され、レポートは partial になります。
 
-コード内で `model` を直接渡すことも可能：`{ provider, endpoint, apiKey, liteModel, proModel, timeoutMs? }`。
-Responses は `/responses`、Chat Completions は `/chat/completions`、Anthropic は `/messages` を使用し、endpoint に既にパスがあれば二重に追加しません。
-モデルの出力は厳密な JSON である必要があります。レスポンスはマークダウンのコードフェンスと前後のコメントを許容します。
-いずれかのブランチが失敗すると、静的結果を保持した `partial` レポートが返され、`branches` に failed/skipped が記録されます。
-詳細はエクスポートされた Zod スキーマを参照してください。
+## CLI
 
-## コマンドライン（CLI）
+~~~text
+agent-threat-scan <file-or-directory> [options]
+~~~
 
-パッケージには `skill-scanner` bin コマンドが付属します（先に `npm run build`、その後 `npm link` または `node dist/cli.js`）：
+| オプション | 説明 |
+|---|---|
+| --quick | 静的スキャンのみ |
+| --mode <quick\|full> | スキャンモード |
+| --config <file> | 設定ファイル。既定値は ./.agent-threat-scanner.json |
+| --locale <locale> | zh-CN、en-US、ja-JP、ko-KR |
+| --json | 完全な JSON レポートを出力 |
+| --output <file> | レポートをファイルへ保存 |
+| --verbose | 進行ログを stderr に出力 |
+| --provider <name> | openai-responses、openai-completions、anthropic |
+| --endpoint <url> | モデル API のベース URL |
+| --lite-model <name> | ルール確認・セマンティック重複除去モデル |
+| --pro-model <name> | 振る舞い分析モデル |
+| --timeout-ms <ms> | 呼び出しタイムアウト。既定値 120000 |
+| --context-window-tokens <n> | モデルへ送る内容上限を調整 |
+| --max-agent-turns <n> | 多ファイル分析の最大 tool-call 回数。既定値 12 |
 
-```bash
-skill-scanner <ファイルまたはディレクトリ> [オプション]
-```
+~~~bash
+agent-threat-scan ./my-skill --quick
+agent-threat-scan ./my-skill --quick --json --output report.json
+agent-threat-scan ./my-skill --config .agent-threat-scanner.json
+~~~
 
-例：
+## Full モードのモデル設定
 
-```bash
-# ディレクトリ（または単一ファイル）の静的スキャン
-skill-scanner /path/to/skill_dir
-skill-scanner /path/to/SKILL.md
+OpenAI Responses、OpenAI Chat Completions、Anthropic Messages に対応します。 [設定テンプレート](.agent-threat-scanner.example.json) をコピーできます。
 
-# JSON 設定ファイルによる full スキャン
-skill-scanner /path/to/skill_dir --config .skill-scanner.json
-
-# 環境変数による full スキャン（LLM_*）
-LLM_ENDPOINT=https://api.openai.com/v1 LLM_API_KEY=sk-... \
-LLM_LITE_MODEL=gpt-4o-mini LLM_PRO_MODEL=gpt-4o \
-skill-scanner /path/to/skill_dir
-
-# 完全な JSON レポートを stdout またはファイルへ出力
-skill-scanner /path/to/skill_dir --json
-skill-scanner /path/to/skill_dir --json --output report.json
-```
-
-`.skill-scanner.json`（`model` オブジェクトはライブラリの `model` 設定と同一）：
-
-```json
+~~~json
 {
   "mode": "full",
-  "locale": "zh-CN",
+  "locale": "ja-JP",
   "model": {
-    "provider": "anthropic",
-    "endpoint": "https://api.anthropic.com/v1",
-    "apiKey": "sk-ant-...",
-    "liteModel": "claude-sonnet-5",
-    "proModel": "claude-opus-5"
+    "provider": "openai-responses",
+    "endpoint": "https://api.openai.com/v1",
+    "apiKey": "sk-...",
+    "liteModel": "gpt-4o-mini",
+    "proModel": "gpt-4o"
   }
 }
-```
+~~~
 
-コピーして使えるテンプレートが `.skill-scanner.example.json` として同梱されています。`.skill-scanner.json` にコピーして値を入力してください
-（実際の設定ファイルは gitignore 済みで、API キーが誤ってコミットされません）。
+環境変数でも設定できます。
 
-オプション：
+~~~bash
+export LLM_PROVIDER=openai-responses
+export LLM_ENDPOINT=https://api.openai.com/v1
+export LLM_API_KEY=sk-...
+export LLM_LITE_MODEL=gpt-4o-mini
+export LLM_PRO_MODEL=gpt-4o
 
-| フラグ | 説明 |
-|---|---|
-| `<ファイルまたはディレクトリ>` | スキャン対象 |
-| `--config <file>` | JSON 設定ファイル（デフォルト `./.skill-scanner.json`） |
-| `--mode <quick\|full>` | スキャンモード（デフォルト：モデル設定があれば full、なければ quick） |
-| `--quick` | 静的スキャンのみ |
-| `--locale <locale>` | `zh-CN` / `en-US` / `ja-JP` / `ko-KR`（デフォルト `zh-CN`） |
-| `--provider <openai-responses\|openai-completions\|anthropic>` | LLM プロトコル（旧値 `openai` は `openai-completions` にマッピング） |
-| `--endpoint <url>` | LLM ベース URL |
-| `--lite-model <name>` | ルール検証 + 意味的重複排除用モデル |
-| `--pro-model <name>` | 単一/複数ファイル挙動解析用モデル |
-| `--timeout-ms <ms>` | 呼び出しごとのタイムアウト（デフォルト 120000） |
-| `--context-window-tokens <n>` | モデルのコンテキストウィンドウ（トークン） |
-| `--max-agent-turns <n>` | 挙動エージェントの最大ツール呼び出し回数（デフォルト 12） |
-| `--json` | 完全な JSON レポートを出力 |
-| `--output <file>` | レポートをファイルに書き出す |
-| `--verbose` | 詳細なスキャンログを stderr に出力（stdout のレポートは汚さない） |
-| `-h, --help` | ヘルプを表示 |
-| `-v, --version` | バージョンを表示 |
+agent-threat-scan ./my-skill --mode full
+~~~
 
-設定の優先順位：CLI フラグ > 設定ファイル > `LLM_*` 環境変数。
-CLI はカレントディレクトリの `.env` を自動で読み込みます（既存の環境変数は上書きしません）。手動で source する必要はありません。
+| 変数 | 必須 | 既定値 |
+|---|---:|---|
+| LLM_PROVIDER | いいえ | endpoint から推測 |
+| LLM_ENDPOINT | full のみ | なし |
+| LLM_API_KEY | full のみ | なし |
+| LLM_LITE_MODEL | full のみ | なし |
+| LLM_PRO_MODEL | full のみ | なし |
+| LLM_TIMEOUT_MS | いいえ | 120000 |
+| LLM_CONTEXT_WINDOW_TOKENS | いいえ | 自動上限 |
+| LLM_MAX_AGENT_TURNS | いいえ | 12 |
+| LLM_LOCALE | いいえ | zh-CN |
+
+## レポートとスコア
+
+Zod schema で検証されたレポートには、verdict、riskScore、threatLevel、findings、rules、branches、skippedFiles、contentHash、tokenUsage が含まれます。
+
+- riskScore は 0–100 で、高いほど安全です。
+- verdict は allow、warn、block、unknown のいずれかです。
+- finding にはリスク種別、重大度、検出元、位置、メッセージ、修正案があります。
+- contentHash はソートした path + content の SHA-256 です。
+- partial スキャンで検出結果がない場合は unknown となり、不完全な証拠を安全とは判定しません。
+
+~~~text
+riskScore = max(0, 100 - staticRuleWeights - modelFindingWeights)
+~~~
+
+## プライバシーと安全境界
+
+- 検査対象のファイルやスクリプトを実行しません。
+- files モードではライブラリ内部からディスクへアクセスしません。
+- paths モードではホストが明示したパスだけを読み取ります。
+- API キーをレポート、ログ、永続ストレージへ書き込みません。
+- 抜粋はシークレットをマスキングし、finding ID にパスを含めません。
+- 現行リリースは静的・モデル支援分析であり、sandbox、動的ネットワーク探索、runtime 防御は提供しません。
+
+## CI での利用
+
+~~~yaml
+- name: Scan agent artifacts
+  run: |
+    npm ci
+    npm run build
+    npx agent-threat-scan ./path/to/skill --quick --json --output agent-threat-report.json
+~~~
+
+リリースゲートでは --mode full と block / high の結果を組織のポリシーに接続してください。
+
+## ロードマップ
+
+- [ ] MCP server と tool manifest の解析
+- [ ] Agent 設定、tool 権限、prompt 組み合わせの分析
+- [ ] Skill、MCP、Agent を自動選択する auto モード
+- [ ] SARIF、JUnit、GitHub Pull Request コメント
+- [ ] ルールパック、組織 allowlist、baseline
+- [ ] 明確な安全境界を持つ隔離動的分析
+
+ロードマップの項目は、別途明記されない限り現行リリースには含まれません。
+
+## 開発
+
+~~~bash
+npm ci --registry=https://registry.npmmirror.com
+npm run build
+npm run typecheck
+npm run lint
+npm test
+npm pack --dry-run
+~~~
+
+サンプルは examples/、ルールと prompt は src/rules/ と src/model/prompts/ にあります。
+
+## コントリビュート
+
+Issue と Pull Request を歓迎します。脆弱性の報告は [SECURITY.md](SECURITY.md)、開発手順は [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
+
+## ライセンス
+
+[MIT](LICENSE) © l3m0nc9 contributors

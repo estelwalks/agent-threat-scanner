@@ -6,7 +6,7 @@ const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2
 /** Renders a deterministic, dependency-free human summary (uses the report's already-localized fields). */
 export function renderSummary(report: ScanSkillReport): string {
   const lines: string[] = [];
-  lines.push(`skill-scanner: mode=${report.mode} status=${report.status} verdict=${report.verdict}`);
+  lines.push(`agent-threat-scan: mode=${report.mode} status=${report.status} verdict=${report.verdict}`);
   lines.push(`riskScore=${report.riskScore}/100 threatLevel=${report.threatLevel} (${report.threatLevelDisplay})`);
   lines.push(`scannedFiles=${report.scannedFiles}${report.skippedFiles.length > 0 ? ` skipped=${report.skippedFiles.length}` : ""} locale=${report.locale}`);
   lines.push(`tokenUsage=${report.tokenUsage.status} requests=${report.tokenUsage.requestCount} reported=${report.tokenUsage.reportedRequestCount} input=${report.tokenUsage.inputTokens} output=${report.tokenUsage.outputTokens} total=${report.tokenUsage.totalTokens} cachedInput=${report.tokenUsage.cachedInputTokens}`);

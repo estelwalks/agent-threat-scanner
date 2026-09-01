@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { FetchLike, ModelConfig, SkillFile } from "../types.js";
+import type { FetchLike, ModelConfig, ScanLog, SkillFile } from "../types.js";
 import type { TokenUsageCollector, UsageContext } from "./usage.js";
 
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
@@ -132,6 +132,16 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
 
+/** Returns a non-sensitive error label for verbose diagnostics. Provider error text can contain URLs or secrets. */
+function modelErrorLabel(error: unknown): string {
+  if (error instanceof DOMException && error.name === "AbortError") return "timeout";
+  const message = error instanceof Error ? error.message : "";
+  const status = message.match(/^model HTTP (\d{3})$/)?.[1];
+  if (status) return `http-${status}`;
+  if (/JSON|response|schema/i.test(message)) return "invalid-response";
+  return "request-failed";
+}
+
 /** Extracts text from the content block arrays used by Responses and Anthropic APIs. */
 function extractTextContent(content: unknown): string | undefined {
   if (typeof content === "string") return content;
@@ -168,29 +178,41 @@ function extractModelText(provider: ModelProtocol, body: unknown): string | unde
 }
 
 /** Low level: sends a custom message array to any supported model protocol and parses JSON. */
-export async function chatJson<S extends z.ZodType>(fetcher: FetchLike, model: ModelConfig, modelName: string, messages: ChatMessage[], schema: S, usage?: { collector: TokenUsageCollector; context: UsageContext }): Promise<z.infer<S>> {
+export async function chatJson<S extends z.ZodType>(fetcher: FetchLike, model: ModelConfig, modelName: string, messages: ChatMessage[], schema: S, usage?: { collector?: TokenUsageCollector; context: UsageContext; log?: ScanLog }): Promise<z.infer<S>> {
   const abort = new AbortController(); const timer = setTimeout(() => abort.abort(), model.timeoutMs);
   const provider = resolveProvider(model);
   const promptMessages = isOpenAIProtocol(provider) && !messages.some((m) => /json/i.test(m.content)) ? appendJsonHint(messages) : messages;
+  const branch = usage?.context.branch ?? "unknown";
+  const inputChars = promptMessages.reduce((total, message) => total + message.content.length, 0);
+  const started = performance.now();
+  usage?.log?.(`model:request start branch=${branch} model=${JSON.stringify(modelName)} provider=${provider} messages=${promptMessages.length} inputChars=${inputChars}`);
+  let responseStatus: number | undefined;
   try {
     const request = provider === "anthropic"
       ? buildAnthropicRequest(model, modelName, promptMessages)
       : provider === "openai-responses"
         ? buildOpenAIResponsesRequest(model, modelName, promptMessages)
         : buildOpenAICompletionsRequest(model, modelName, promptMessages);
-    usage?.collector.request(usage.context);
+    usage?.collector?.request(usage.context);
     const response = await fetcher(request.url, { method: "POST", headers: request.headers, signal: abort.signal, body: JSON.stringify(request.body) });
+    responseStatus = response.status;
+    usage?.log?.(`model:response received branch=${branch} status=${response.status}`);
     if (!response.ok) throw new Error(`model HTTP ${response.status}`);
     const body: unknown = await response.json();
-    usage?.collector.response(usage.context, body);
+    usage?.collector?.response(usage.context, body);
     const text = extractModelText(provider, body);
     if (typeof text !== "string") throw new Error("model response has no text content");
-    return schema.parse(JSON.parse(parseJsonText(text)));
+    const parsed = schema.parse(JSON.parse(parseJsonText(text)));
+    usage?.log?.(`model:request complete branch=${branch} status=${response.status} outputChars=${text.length} elapsedMs=${Math.round(performance.now() - started)}`);
+    return parsed;
+  } catch (error) {
+    usage?.log?.(`model:request failed branch=${branch} status=${responseStatus ?? "none"} error=${modelErrorLabel(error)} elapsedMs=${Math.round(performance.now() - started)}`);
+    throw error;
   } finally { clearTimeout(timer); }
 }
 
 /** Single-shot task-style ask (system + user(task + payload)). Pass `system` to use a custom system prompt; a string `payload` is sent verbatim instead of JSON-encoded. */
-export async function askModel<S extends z.ZodType>(fetcher: FetchLike, model: ModelConfig, modelName: string, task: string, payload: unknown, shape: string, schema: S, system?: string, usage?: { collector: TokenUsageCollector; context: UsageContext }): Promise<z.infer<S>> {
+export async function askModel<S extends z.ZodType>(fetcher: FetchLike, model: ModelConfig, modelName: string, task: string, payload: unknown, shape: string, schema: S, system?: string, usage?: { collector?: TokenUsageCollector; context: UsageContext; log?: ScanLog }): Promise<z.infer<S>> {
   const payloadText = typeof payload === "string" ? payload : JSON.stringify(payload);
   return chatJson(fetcher, model, modelName, [
     { role: "system", content: system ?? `${SYSTEM_PROMPT} Expected response shape: ${shape}.` },

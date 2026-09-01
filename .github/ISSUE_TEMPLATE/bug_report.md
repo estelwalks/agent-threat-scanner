@@ -18,4 +18,4 @@ Steps or a minimal example that reproduces the problem.
 
 - Node.js:
 - OS:
-- skill-scanner version:
+- agent-threat-scanner version:

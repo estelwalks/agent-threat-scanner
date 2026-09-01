@@ -293,7 +293,7 @@ describe("report aggregation", () => {
 });
 describe("paths input (file / directory)", () => {
   let dir: string;
-  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "skill-scanner-")); });
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "agent-threat-scanner-")); });
   afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
   it("scans a single file path and reports its absolute path", async () => {
@@ -322,7 +322,7 @@ describe("paths input (file / directory)", () => {
   });
 
   it("reports symlink entries as skipped and never scans their targets", async () => {
-    const outside = mkdtempSync(join(tmpdir(), "skill-scanner-outside-report-"));
+    const outside = mkdtempSync(join(tmpdir(), "agent-threat-scanner-outside-report-"));
     try {
       const secret = join(outside, "secret.txt");
       writeFileSync(secret, "AKIAABCDEFGHIJKLMNOP");

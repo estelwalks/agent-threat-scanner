@@ -6,7 +6,7 @@ import { collectPaths, detectBinary, isProjectTreeIgnoredPath, isSafeRelativePat
 
 describe("collectPaths", () => {
   let dir: string;
-  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "skill-scanner-input-")); });
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "agent-threat-scanner-input-")); });
   afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
   it("reads a single file and reports its absolute path", async () => {
@@ -45,7 +45,7 @@ describe("collectPaths", () => {
   });
 
   it("does not follow symlink files or directories", async () => {
-    const outside = mkdtempSync(join(tmpdir(), "skill-scanner-outside-"));
+    const outside = mkdtempSync(join(tmpdir(), "agent-threat-scanner-outside-"));
     try {
       const secret = join(outside, "secret.txt");
       writeFileSync(secret, "AKIAABCDEFGHIJKLMNOP");
@@ -67,7 +67,7 @@ describe("collectPaths", () => {
   });
 
   it("reports a symlink scan entry as skipped without reading its target", async () => {
-    const outside = mkdtempSync(join(tmpdir(), "skill-scanner-outside-entry-"));
+    const outside = mkdtempSync(join(tmpdir(), "agent-threat-scanner-outside-entry-"));
     try {
       const secret = join(outside, "secret.txt");
       writeFileSync(secret, "AKIAABCDEFGHIJKLMNOP");
