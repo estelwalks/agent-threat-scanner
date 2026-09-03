@@ -1,0 +1,5 @@
+agent-threat-scanner
+Copyright (c) 2026 estelwalks contributors
+
+This repository contains first-party TypeScript scanner code, security rules,
+analysis prompts, and test samples maintained by estelwalks contributors.

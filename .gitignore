@@ -1,0 +1,29 @@
+node_modules/
+dist/
+*.tgz
+coverage/
+examples/samples/category-report.json
+
+# secrets
+.env
+.env.*
+!.env.example
+.agent-threat-scanner.json
+
+# local IDE and OS files
+.claude/settings.local.json
+.DS_Store
+
+# local logs and credential material
+*.log
+logs/
+*.pem
+*.key
+*.crt
+*.cer
+*.csr
+*.der
+*.p12
+*.pfx
+*.jks
+*.keystore
