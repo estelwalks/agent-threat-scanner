@@ -69,6 +69,7 @@ describe("rule-review contract", () => {
           ],
         });
       }
+      if (user.startsWith(MULTI_ANALYSIS)) return openai({ risk_found: false, findings: [] });
       if (user.startsWith(AGENT_ANALYSIS)) return openai({ type: "final", risk_found: false, findings: [] });
       throw new Error(`unexpected model request: ${user.slice(0, 80)}`);
     };
@@ -163,16 +164,17 @@ describe("behavioral-analysis routing and fallback contract", () => {
   it.each([
     ["one non-SKILL file", [{ path: "README.md", content: "# harmless" }]],
     ["multiple files", [{ path: "SKILL.md", content: "# harmless" }, { path: "scripts/check.mjs", content: "console.log('ok')" }]],
-  ])("routes %s through the multi-file agent", async (_name, files) => {
+  ])("routes %s through the multi-file analysis branch (single-shot for small input)", async (_name, files) => {
     const calls: string[] = [];
     const fetcher: FetchLike = async (_url, init) => {
       const user = userMessage(init);
       calls.push(user);
-      return openai({ type: "final", risk_found: false, findings: [] });
+      return openai({ risk_found: false, findings: [] });
     };
     const report = await scanSkill({ mode: "full", locale: "en-US", model, files }, { fetch: fetcher });
 
-    expect(calls.some((call) => call.startsWith(AGENT_ANALYSIS))).toBe(true);
+    expect(calls.some((call) => call.startsWith(MULTI_ANALYSIS))).toBe(true);
+    expect(calls.some((call) => call.startsWith(AGENT_ANALYSIS))).toBe(false);
     expect(calls.some((call) => call.startsWith(SINGLE_ANALYSIS))).toBe(false);
     expect(report.branches).toContainEqual({ name: "singleFileAnalysis", status: "skipped", detail: "multi-file input" });
     expect(report.branches).toContainEqual({ name: "multiFileAnalysis", status: "complete" });
@@ -193,7 +195,8 @@ describe("behavioral-analysis routing and fallback contract", () => {
     const report = await scanSkill({
       mode: "full",
       locale: "en-US",
-      model,
+      // A tiny declared window keeps the input above the single-shot budget.
+      model: { ...model, contextWindowTokens: 120 },
       files: [{ path: "SKILL.md", content: "# telemetry helper" }, { path: "scripts/flow.mjs", content: "export function sendTelemetry(value) { return value; }" }],
     }, { fetch: fetcher });
 
@@ -219,7 +222,12 @@ describe("behavioral-analysis routing and fallback contract", () => {
       }
       throw new Error(`unexpected model request: ${user.slice(0, 80)}`);
     };
-    const selectedModel = failure === "turn exhaustion" ? { ...model, maxAgentTurns: 2 } : model;
+    const selectedModel = {
+      // A tiny declared window keeps the input above the single-shot budget.
+      ...model,
+      contextWindowTokens: 60,
+      ...(failure === "turn exhaustion" ? { maxAgentTurns: 2 } : {}),
+    };
     const report = await scanSkill({
       mode: "full",
       locale: "en-US",
@@ -244,7 +252,8 @@ describe("behavioral-analysis routing and fallback contract", () => {
     const report = await scanSkill({
       mode: "full",
       locale: "en-US",
-      model,
+      // A tiny declared window keeps the input above the single-shot budget.
+      model: { ...model, contextWindowTokens: 60 },
       files: [{ path: "SKILL.md", content: "# harmless" }, { path: "scripts/flow.mjs", content: "export const value = 1;" }],
     }, { fetch: fetcher });
 

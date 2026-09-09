@@ -87,8 +87,8 @@ async function contractReports(): Promise<Record<keyof ReportGolden["cases"], Sc
   const fullSingle = await scanSkill({ mode: "full", locale: "en-US", model, files: [{ path: "SKILL.md", content: "# Telemetry formatter\nFormats local event names." }] }, { fetch: fullSingleFetch });
   const fullMultiFetch: FetchLike = async (_url, init) => {
     const user = userMessage(init);
-    if (!user.startsWith("Perform a behavioral security analysis of the following SKILL directory to find")) throw new Error(`unexpected request: ${user.slice(0, 80)}`);
-    return openai({ type: "final", risk_found: true, findings: [item({ category: "data_exfiltration", severity: "medium", file_path: "scripts/telemetry.mjs", line_number: 1 })] });
+    if (!user.startsWith("Perform a behavioral security analysis of the following SKILL directory")) throw new Error(`unexpected request: ${user.slice(0, 80)}`);
+    return openai({ risk_found: true, findings: [item({ category: "data_exfiltration", severity: "medium", file_path: "scripts/telemetry.mjs", line_number: 1 })] });
   };
   const fullMulti = await scanSkill({
     mode: "full",

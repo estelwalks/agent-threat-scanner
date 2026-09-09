@@ -182,11 +182,48 @@ describe("full scan model handling", () => {
       }
       return openaiReply({ risk_found: false, findings: [] });
     };
-    const report = await scanSkill({ mode: "full", locale: "en-US", files: [{ path: "SKILL.md", content: "hello" }, { path: "run.py", content: "print('ok')" }], model: config }, { fetch: fetchMock });
+    // A tiny declared context window keeps the total content above the
+    // single-shot budget so the tool-using agent is exercised.
+    const report = await scanSkill({ mode: "full", locale: "en-US", files: [{ path: "SKILL.md", content: "hello world\n".repeat(30) }, { path: "run.py", content: "print('ok')" }], model: { ...config, contextWindowTokens: 200 } }, { fetch: fetchMock });
     const agentFinding = report.findings.find((f) => f.source === "model" && f.message === "agent found exec");
     expect(agentFinding?.kind).toBe("command_injection");
     expect(report.branches.find((b) => b.name === "multiFileAnalysis")?.status).toBe("complete");
     expect(report.tokenUsage.byBranch.multiFileAnalysis).toMatchObject({ status: "complete", requestCount: 2, totalTokens: 12 });
+  });
+  it("analyzes small multi-file input in one single-shot request without agent turns", async () => {
+    let calls = 0;
+    let payload = "";
+    const fetchMock = async (_url: string, init?: RequestInit) => {
+      calls += 1;
+      const messages = JSON.parse(String(init?.body)).messages;
+      payload = String(messages[1].content);
+      expect(payload.startsWith(MULTI_TASK)).toBe(true);
+      return openaiReply({ risk_found: true, findings: [riskItem({ category: "data_exfiltration", severity: "medium", description: "fast path finding", line_number: 4 })] });
+    };
+    const report = await scanSkill({ mode: "full", locale: "en-US", files: [{ path: "SKILL.md", content: "# summarize\nhello\n" }, { path: "scripts/run.py", content: "print('ok')\n" }], model: config }, { fetch: fetchMock });
+    expect(calls).toBe(1); // no ruleReview (clean input), no agent protocol, no dedup
+    expect(payload).toContain("### SKILL.md");
+    expect(payload).toContain("# summarize");
+    expect(payload).toContain("### scripts/run.py");
+    expect(payload).toContain("print('ok')");
+    expect(report.branches.find((b) => b.name === "multiFileAnalysis")?.status).toBe("complete");
+    expect(report.tokenUsage.byBranch.multiFileAnalysis).toMatchObject({ status: "complete", requestCount: 1, totalTokens: 6 });
+    expect(report.findings).toHaveLength(1);
+  });
+  it("keeps the tool-using agent when multi-file content exceeds the single-shot budget", async () => {
+    const fetchMock = async (_url: string, init?: RequestInit) => {
+      const messages = JSON.parse(String(init?.body)).messages;
+      const content = String(messages[1].content);
+      if (content.startsWith(AGENT_TASK)) {
+        if (messages.length === 2) return openaiReply({ type: "tool_call", tool: "list_files", args: {} });
+        return openaiReply({ type: "final", risk_found: true, findings: [riskItem({ category: "obfuscation", severity: "medium", description: "oversized agent finding" })] });
+      }
+      return openaiReply({ risk_found: false, findings: [] });
+    };
+    const report = await scanSkill({ mode: "full", locale: "en-US", files: [{ path: "SKILL.md", content: "# doc\n" }, { path: "blob.txt", content: "x".repeat(80).repeat(1_000) + "\n" }], model: { ...config, contextWindowTokens: 2_000 } }, { fetch: fetchMock });
+    const agentFinding = report.findings.find((f) => f.source === "model" && f.message === "oversized agent finding");
+    expect(agentFinding).toBeDefined();
+    expect(report.tokenUsage.byBranch.multiFileAnalysis).toMatchObject({ status: "complete", requestCount: 2 });
   });
   it("semantically dedups rule findings against model findings (model wins)", async () => {
     const fetchMock = async (_url: string, init?: RequestInit) => {
@@ -359,8 +396,8 @@ describe("paths input (file / directory)", () => {
       const user = body.messages.find((message) => message.role === "user")?.content ?? "";
       requests.push(user);
       if (user.startsWith("Please verify each of the following rule hits")) return openaiReply({ verifications: [{ index: 0, is_true_positive: true }] });
-      if (user.startsWith("Perform a behavioral security analysis of the following SKILL directory to find")) {
-        return openaiReply({ type: "final", risk_found: true, findings: [{
+      if (user.startsWith("Perform a behavioral security analysis of the following SKILL directory")) {
+        return openaiReply({ risk_found: true, findings: [{
           index: 0, category: "data_exfiltration", severity: "medium", file_path: "scripts/flow.py", line_number: 0,
           name: "agent finding", name_zh: "", description: "model finding", description_zh: "", remediation: "", remediation_zh: "", reasoning: "",
         }] });

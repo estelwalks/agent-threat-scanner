@@ -95,7 +95,7 @@ files와 paths는 동시에 사용할 수 없습니다. files 모드에서는 �
 | quick | pre-commit, 로컬 확인, 모델이 없는 환경 | 정적 규칙 + 파일 수준 검사 |
 | full | 고위험 변경, 릴리스 전 검토 | quick + lite 모델 규칙 검증 + pro 모델 행동 분석 |
 
-단일 SKILL.md는 단일 파일 분석을 사용합니다. 여러 파일을 입력하면 list_files, read_file, grep 도구를 사용하는 행동 분석 루프로 파일 간 관계를 추적합니다. 모델 분기가 실패해도 정적 결과는 보존되며 보고서는 partial로 표시됩니다.
+단일 SKILL.md는 단일 파일 분석을 사용합니다. 여러 파일의 내용 합계가 모델 컨텍스트에 들어가면 단일 요청으로 전체 행동 분석을 수행합니다(더 빠르고 저렴). 예산을 초과하는 입력에만 list_files, read_file, grep 도구를 사용하는 행동 분석 루프로 파일 간 관계를 추적합니다. 모델 분기가 실패해도 정적 결과는 보존되며 보고서는 partial로 표시됩니다.
 
 ## CLI
 
@@ -218,16 +218,62 @@ riskScore = max(0, 100 - staticRuleWeights - modelFindingWeights)
 
 ## 개발
 
+### 환경과 빌드
+
 ~~~bash
 npm ci --registry=https://registry.npmmirror.com
-npm run build
+npm run build      # tsup이 dist/를 생성하고 prompts를 dist/prompts/로 복사
 npm run typecheck
 npm run lint
 npm test
 npm pack --dry-run
 ~~~
 
-예제는 examples/에, 규칙과 prompt는 src/rules/ 및 src/model/prompts/에 있습니다.
+`src/model/prompts/` 아래의 프롬프트를 수정한 뒤에는 반드시 `npm run build`를 다시 실행하세요(실행 시 `dist/prompts/`에서 읽습니다). 예제는 examples/, 규칙은 src/rules/에 있습니다.
+
+### 개발 모드 설치(다른 프로젝트에서 로컬 엔진 사용)
+
+엔진 소스를 수정한 뒤 npm에 먼저 배포하지 않고 소비 프로젝트(이 엔진을 내장한 데스크톱 앱 등)에 바로 반영하려면 세 가지 방법이 있습니다.
+
+~~~bash
+# 1) npm link: 소비자의 node_modules가 이 저장소를 가리키는 심볼릭 링크가 됩니다.
+#    장기적인 로컬 개발에 가장 적합
+cd agent-threat-scanner && npm run build && npm link
+cd consumer-project && npm link @estelwalks/agent-threat-scanner
+
+# 2) 로컬 tarball: 소비자의 registry 참조는 그대로 유지
+cd agent-threat-scanner && npm pack          # agent-threat-scanner-<version>.tgz 생성
+cd consumer-project && npm install ../agent-threat-scanner/agent-threat-scanner-<version>.tgz
+
+# 3) 빌드 산출물을 직접 동기화: 가장 빠른 임시 반복 방식
+#    (node_modules는 로컬 머신 상태)
+cd agent-threat-scanner && npm run build
+rm -rf consumer-project/node_modules/@estelwalks/agent-threat-scanner/dist
+cp -R dist consumer-project/node_modules/@estelwalks/agent-threat-scanner/dist
+~~~
+
+세 방법 모두 로컬 머신에만 영향을 줍니다. 이후 소비자 쪽에서 `npm ci` / `npm install`을 실행하면 registry의 정식 버전으로 되돌아갑니다. 정식 릴리스 시에는 이 저장소의 버전을 올리고(예: 0.1.1) `npm publish`한 뒤 소비자의 의존성을 업그레이드하세요.
+
+### 개발 모드 사용
+
+~~~bash
+# 빌드 산출물에서 CLI 직접 실행(설치 후 agent-threat-scan과 동일)
+node dist/cli.js ./path/to/skill --quick --verbose
+node dist/cli.js ./path/to/skill --mode full --json --output report.json
+
+# full 모드 로컬 검증(OpenAI 호환 엔드포인트 예시)
+export LLM_ENDPOINT=https://api.deepseek.com/v1 LLM_API_KEY=sk-... \
+       LLM_LITE_MODEL=deepseek-chat LLM_PRO_MODEL=deepseek-chat
+node dist/cli.js ./path/to/skill --mode full --verbose
+
+# 또는 저장소에 포함된 디렉터리 전체 스캔 드라이버 스크립트 사용
+node examples/run-full-scan.mjs ./path/to/skill_dir
+~~~
+
+참고:
+
+- 모델 관련 환경 변수(`LLM_ENDPOINT`, `LLM_API_KEY`, `LLM_LITE_MODEL`, `LLM_PRO_MODEL`, 선택 항목 `LLM_TIMEOUT_MS`, `LLM_CONTEXT_WINDOW_TOKENS`, `LLM_MAX_AGENT_TURNS`, `LLM_LOCALE`)는 「Full 모드와 모델 설정」을 참조하세요.
+- test/의 모델 분기 테스트는 모두 mock fetch를 사용하며 실제 요청을 보내지 않아 결과가 재현 가능합니다. 실제 모델로 엔드투엔드 검증이 필요하면 위의 full 명령을 사용하고 보고서의 `branches`와 `tokenUsage`를 확인하세요.
 
 ## 프로젝트 구조
 

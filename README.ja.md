@@ -95,7 +95,7 @@ files と paths は同時に指定できません。files モードでは呼び�
 | quick | pre-commit、ローカル確認、モデルなしの環境 | 静的ルール + ファイル検査 |
 | full | 高リスク変更、リリース前レビュー | quick + lite モデルのルール確認 + pro モデルの振る舞い分析 |
 
-単一の SKILL.md には単一ファイル分析を、多ファイル入力には list_files、read_file、grep を使う振る舞い分析ループを実行します。モデル分岐に失敗しても静的結果は保持され、レポートは partial になります。
+単一の SKILL.md には単一ファイル分析を、内容がモデルのコンテキストに収まる多ファイル入力には一回の全量行動分析を実行します（より高速・低コスト）。予算を超える入力にのみ list_files、read_file、grep を使う振る舞い分析ループでファイル間の関係を追跡します。モデル分岐に失敗しても静的結果は保持され、レポートは partial になります。
 
 ## CLI
 
@@ -216,16 +216,63 @@ riskScore = max(0, 100 - staticRuleWeights - modelFindingWeights)
 
 ## 開発
 
+### 環境とビルド
+
 ~~~bash
 npm ci --registry=https://registry.npmmirror.com
-npm run build
+npm run build      # tsup が dist/ を生成し、prompts を dist/prompts/ へコピー
 npm run typecheck
 npm run lint
 npm test
 npm pack --dry-run
 ~~~
 
-サンプルは examples/、ルールと prompt は src/rules/ と src/model/prompts/ にあります。
+`src/model/prompts/` のプロンプトを変更したら `npm run build` を必ず再実行してください（実行時は `dist/prompts/` から読み込みます）。サンプルは examples/、ルールは src/rules/ にあります。
+
+### 開発モードでのインストール（他プロジェクトでローカルエンジンを使う）
+
+エンジンのソースを変更し、公開前に消費側プロジェクト（このエンジンを組み込んだデスクトップアプリなど）へすぐ反映したい場合は、次の 3 つの方法があります。
+
+~~~bash
+# 1) npm link：消費側の node_modules が本リポジトリへのシンボリックリンクになる。
+#    長期的なローカル開発に最適
+cd agent-threat-scanner && npm run build && npm link
+cd consumer-project && npm link @estelwalks/agent-threat-scanner
+
+# 2) ローカル tarball：消費側の registry 参照を変えない
+cd agent-threat-scanner && npm pack          # agent-threat-scanner-<version>.tgz を生成
+cd consumer-project && npm install ../agent-threat-scanner/agent-threat-scanner-<version>.tgz
+
+# 3) ビルド成果物を直接コピー：最速の一時的イテレーション
+#    （node_modules はローカルマシンの状態）
+cd agent-threat-scanner && npm run build
+rm -rf consumer-project/node_modules/@estelwalks/agent-threat-scanner/dist
+cp -R dist consumer-project/node_modules/@estelwalks/agent-threat-scanner/dist
+~~~
+
+いずれもローカルマシンにのみ影響します。消費側で後から `npm ci` / `npm install` を実行すると、registry の正式バージョンへ戻ります。正式リリース時は本リポジトリのバージョンを上げ（例 0.1.1）、`npm publish` してから消費側の依存を更新してください。
+
+### 開発モードでの利用
+
+~~~bash
+# ビルド成果物から CLI を直接実行（インストール後の agent-threat-scan と同等）
+node dist/cli.js ./path/to/skill --quick --verbose
+node dist/cli.js ./path/to/skill --mode full --json --output report.json
+
+# full モードのローカル検証（OpenAI 互換エンドポイントの例）
+export LLM_ENDPOINT=https://api.deepseek.com/v1 LLM_API_KEY=sk-... \
+       LLM_LITE_MODEL=deepseek-chat LLM_PRO_MODEL=deepseek-chat
+node dist/cli.js ./path/to/skill --mode full --verbose
+
+# または付属のディレクトリ全量スキャン駆動スクリプトを利用
+node examples/run-full-scan.mjs ./path/to/skill_dir
+~~~
+
+補足：
+
+- モデル関連の環境変数（`LLM_ENDPOINT`、`LLM_API_KEY`、`LLM_LITE_MODEL`、`LLM_PRO_MODEL`、任意の `LLM_TIMEOUT_MS`、`LLM_CONTEXT_WINDOW_TOKENS`、`LLM_MAX_AGENT_TURNS`、`LLM_LOCALE`）は「Full モードのモデル設定」を参照してください。
+- test/ のモデル分岐テストはすべて mock fetch を使用しており、実際のリクエストは送信されず結果も再現可能です。実際のモデルでのエンドツーエンド検証には上の full コマンドを使い、レポートの `branches` と `tokenUsage` を確認してください。
+
 
 ## コントリビュート
 

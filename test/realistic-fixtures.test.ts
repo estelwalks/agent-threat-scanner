@@ -178,8 +178,8 @@ describe("realistic full-scan routing", () => {
       if (task.startsWith("Please verify each of the following rule hits")) {
         return openaiReply({ verifications: [{ index: 0, is_true_positive: true, reasoning: "network sink is present" }] });
       }
-      if (task.startsWith("Perform a behavioral security analysis of the following SKILL directory to find")) {
-        return openaiReply({ type: "final", risk_found: true, findings: [modelFinding] });
+      if (task.startsWith("Perform a behavioral security analysis of the following SKILL directory")) {
+        return openaiReply({ risk_found: true, findings: [modelFinding] });
       }
       if (task.startsWith("Determine whether rule hits")) {
         return openaiReply({ duplicateRuleIndices: [] });

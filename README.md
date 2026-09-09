@@ -98,7 +98,7 @@ files 和 paths 互斥。files 模式只处理调用方已经放入内存的内�
 | quick | 本地预检、提交前检查、无模型环境 | 静态规则 + 文件级检查，确定性强 |
 | full | 高风险变更、发布前审查 | quick 结果 + lite 模型规则复核 + pro 模型行为分析 |
 
-单个 SKILL.md 使用单文件模型分析；多文件输入使用带 list_files、read_file、grep 工具的行为分析循环，以追踪跨文件关系。模型分支失败时会保留静态结果并将报告标记为 partial。
+单个 SKILL.md 使用单文件模型分析；多文件输入在内容总量能放入模型上下文时使用一次请求的全量行为分析（更快、更省），超出预算才启用带 list_files、read_file、grep 工具的行为分析循环来追踪跨文件关系。模型分支失败时会保留静态结果并将报告标记为 partial。
 
 ## CLI
 
@@ -231,16 +231,60 @@ riskScore = max(0, 100 - staticRuleWeights - modelFindingWeights)
 
 ## 开发
 
+### 环境与构建
+
 ~~~bash
 npm ci --registry=https://registry.npmmirror.com
-npm run build
+npm run build      # tsup 构建 dist/，并把 prompts 复制到 dist/prompts/
 npm run typecheck
 npm run lint
 npm test
 npm pack --dry-run
 ~~~
 
-示例脚本位于 examples/；规则和提示词位于 src/rules/ 与 src/model/prompts/。
+修改 `src/model/prompts/` 下的提示词后必须重新 `npm run build`（运行时从 `dist/prompts/` 读取）。示例脚本位于 examples/；规则位于 src/rules/。
+
+### 开发模式安装（在其它项目中使用本地引擎）
+
+改完引擎源码后想让消费方项目（例如集成本引擎的桌面应用）立刻用上、又不想先发布到 npm，有三种方式：
+
+~~~bash
+# 1) npm link：消费方的 node_modules 变成指向本仓库的符号链接，最适合长期本地开发
+cd agent-threat-scanner && npm run build && npm link
+cd consumer-project && npm link @estelwalks/agent-threat-scanner
+
+# 2) 本地 tarball：不改动消费方对 registry 的引用
+cd agent-threat-scanner && npm pack          # 生成 agent-threat-scanner-<version>.tgz
+cd consumer-project && npm install ../agent-threat-scanner/agent-threat-scanner-<version>.tgz
+
+# 3) 直接同步构建产物：最快的临时迭代方式（node_modules 只是本机状态）
+cd agent-threat-scanner && npm run build
+rm -rf consumer-project/node_modules/@estelwalks/agent-threat-scanner/dist
+cp -R dist consumer-project/node_modules/@estelwalks/agent-threat-scanner/dist
+~~~
+
+三种方式都只影响本地机器：之后执行 `npm ci` / `npm install` 会把消费方还原成 registry 上的正式版本。要发布正式版本时，在本仓库提升版本号（如 0.1.1）并 `npm publish`，再升级消费方的依赖即可。
+
+### 开发模式使用
+
+~~~bash
+# 直接从构建产物运行 CLI（等价于安装后的 agent-threat-scan 命令）
+node dist/cli.js ./path/to/skill --quick --verbose
+node dist/cli.js ./path/to/skill --mode full --json --output report.json
+
+# full 模式本地验证（OpenAI 兼容端点示例）
+export LLM_ENDPOINT=https://api.deepseek.com/v1 LLM_API_KEY=sk-... \
+       LLM_LITE_MODEL=deepseek-chat LLM_PRO_MODEL=deepseek-chat
+node dist/cli.js ./path/to/skill --mode full --verbose
+
+# 或使用仓库自带的目录全量扫描驱动脚本
+node examples/run-full-scan.mjs ./path/to/skill_dir
+~~~
+
+说明：
+
+- 模型相关环境变量（`LLM_ENDPOINT`、`LLM_API_KEY`、`LLM_LITE_MODEL`、`LLM_PRO_MODEL`，可选 `LLM_TIMEOUT_MS`、`LLM_CONTEXT_WINDOW_TOKENS`、`LLM_MAX_AGENT_TURNS`、`LLM_LOCALE`）见「Full 模式与模型配置」小节。
+- test/ 中的模型分支测试全部使用 mock fetch，不发真实请求、结果可复现；需要真实模型端到端验证时，用上面的 full 命令并检查报告中的 `branches` 与 `tokenUsage`。
 
 ## 项目结构
 
