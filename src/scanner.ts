@@ -6,7 +6,7 @@ import { fileLevelScan } from "./detection/fileChecks.js";
 import { asFindings, buildCategories, buildContext, buildRuleAggregations, buildSummary } from "./detection/report.js";
 import { computeScore, threatLevelOf, verdictOf } from "./detection/scoring.js";
 import { dedupByLocation, semanticDedup } from "./detection/dedup.js";
-import { ModelResponseSchema, RuleVerificationSchema, askModel, capFilesForModel } from "./model/client.js";
+import { ModelResponseSchema, RuleVerificationSchema, askModel, capFilesForModel, fitsSingleShotBudget, singleShotBudgetChars } from "./model/client.js";
 import type { BehavioralRiskItem } from "./model/client.js";
 import { runBehavioralAgent } from "./model/agent.js";
 import { ATTACK_PATTERNS_CONTENT, ATTACK_PATTERNS_PATH, buildModelPrompts, formatFilesForPrompt, formatFindingsForVerification } from "./model/prompts.js";
@@ -177,18 +177,30 @@ export async function scanSkill(input: unknown, dependencies: ScanDependencies =
           }
         } else {
           branches.push({ name: "singleFileAnalysis", status: "skipped", detail: "multi-file input" });
-          log?.(`multiFileAnalysis: running behavioral agent with ${request.model.proModel}`);
-          const agentFiles: SkillFile[] = [...modelView.files, { path: ATTACK_PATTERNS_PATH, content: ATTACK_PATTERNS_CONTENT, isBinary: false }];
-          const fileListJson = JSON.stringify(agentFiles.map((f) => ({ path: f.path, lineCount: f.content.split(/\r?\n/).length, chars: f.content.length })));
           const multiTask = "Perform a behavioral security analysis of the following SKILL directory content to find security risks that static rules cannot detect. Output strict JSON per the schema; do not use markdown code fences.\nBelow is the full file content:\n\n";
           try {
             let behavioralFindings: BehavioralRiskItem[];
-            try {
-              behavioralFindings = await runBehavioralAgent(fetcher, request.model, agentFiles, prompts.agentSystem, prompts.agentTask(fileListJson), usageCollector, log);
-            } catch {
-              log?.("model:multiFileAnalysis fallback=single-request");
-              const response = await askModel(fetcher, request.model, request.model.proModel, multiTask, formatFilesForPrompt(capFilesForModel(modelView.files, request.model)), prompts.shapeFindings, ModelResponseSchema, prompts.multi, { collector: usageCollector, context: { model: request.model.proModel, branch: "multiFileAnalysis" }, log });
+            // Fast path: when every analyzed file fits the single-shot budget,
+            // the full content is sent to the pro model in ONE request. The
+            // model then sees the whole Skill (no tool sampling), which removes
+            // most per-Skill model round-trips of a full scan. Larger inputs
+            // still run the bounded tool-using agent so exploration of huge
+            // directories does not overflow the context window.
+            if (fitsSingleShotBudget(modelView.files, request.model)) {
+              log?.(`multiFileAnalysis: running single-shot analysis with ${request.model.proModel} files=${modelView.files.length} budget=${singleShotBudgetChars(request.model)}`);
+              const response = await askModel(fetcher, request.model, request.model.proModel, multiTask, formatFilesForPrompt(modelView.files), prompts.shapeFindings, ModelResponseSchema, prompts.multi, { collector: usageCollector, context: { model: request.model.proModel, branch: "multiFileAnalysis" }, log });
               behavioralFindings = response.findings;
+            } else {
+              log?.(`multiFileAnalysis: running behavioral agent with ${request.model.proModel}`);
+              const agentFiles: SkillFile[] = [...modelView.files, { path: ATTACK_PATTERNS_PATH, content: ATTACK_PATTERNS_CONTENT, isBinary: false }];
+              const fileListJson = JSON.stringify(agentFiles.map((f) => ({ path: f.path, lineCount: f.content.split(/\r?\n/).length, chars: f.content.length })));
+              try {
+                behavioralFindings = await runBehavioralAgent(fetcher, request.model, agentFiles, prompts.agentSystem, prompts.agentTask(fileListJson), usageCollector, log);
+              } catch {
+                log?.("model:multiFileAnalysis fallback=single-request");
+                const response = await askModel(fetcher, request.model, request.model.proModel, multiTask, formatFilesForPrompt(capFilesForModel(modelView.files, request.model)), prompts.shapeFindings, ModelResponseSchema, prompts.multi, { collector: usageCollector, context: { model: request.model.proModel, branch: "multiFileAnalysis" }, log });
+                behavioralFindings = response.findings;
+              }
             }
             results.push({ name: "multiFileAnalysis", findings: behavioralFindings });
           } catch (error) {

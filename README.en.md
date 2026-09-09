@@ -98,7 +98,7 @@ File-level checks cover risky extensions, oversized content, very long files, hi
 | quick | pre-commit checks and environments without a model | static rules and file-level checks |
 | full | high-risk changes and release review | quick results plus lite-model rule verification and pro-model behavioral analysis |
 
-A single SKILL.md uses single-file analysis. Multi-file input uses a behavioral loop with list_files, read_file, and grep tools to trace cross-file relationships. If a model branch fails, static results are preserved and the report is marked partial.
+A single SKILL.md uses single-file analysis. Multi-file input whose combined content fits the model context is analyzed in a single request (faster and cheaper); oversized input uses the tool-using behavioral loop with list_files, read_file, and grep tools to trace cross-file relationships. If a model branch fails, static results are preserved and the report is marked partial.
 
 ## CLI
 
@@ -231,16 +231,63 @@ Roadmap items are not available in the current release unless documented elsewhe
 
 ## Development
 
+### Environment and build
+
 ~~~bash
 npm ci --registry=https://registry.npmmirror.com
-npm run build
+npm run build      # tsup build into dist/ and copies prompts to dist/prompts/
 npm run typecheck
 npm run lint
 npm test
 npm pack --dry-run
 ~~~
 
-Examples live in examples/. Rules and prompts live in src/rules/ and src/model/prompts/.
+After editing prompts under `src/model/prompts/` you must re-run `npm run build` (they are read from `dist/prompts/` at runtime). Examples live in examples/; rules live in src/rules/.
+
+### Install in development mode (use the local engine in another project)
+
+When you change the engine and want a consumer project (for example a desktop app that embeds this engine) to pick it up immediately — without publishing to npm first — there are three ways:
+
+~~~bash
+# 1) npm link: the consumer's node_modules becomes a symlink to this repo;
+#    best for long-lived local development
+cd agent-threat-scanner && npm run build && npm link
+cd consumer-project && npm link @estelwalks/agent-threat-scanner
+
+# 2) Local tarball: keeps the consumer's registry reference untouched
+cd agent-threat-scanner && npm pack          # produces agent-threat-scanner-<version>.tgz
+cd consumer-project && npm install ../agent-threat-scanner/agent-threat-scanner-<version>.tgz
+
+# 3) Sync the build output directly: fastest throwaway iteration
+#    (node_modules is machine-local state)
+cd agent-threat-scanner && npm run build
+rm -rf consumer-project/node_modules/@estelwalks/agent-threat-scanner/dist
+cp -R dist consumer-project/node_modules/@estelwalks/agent-threat-scanner/dist
+~~~
+
+All three only affect the local machine: a later `npm ci` / `npm install` in the consumer restores the published registry version. To ship a release, bump the version in this repo (e.g. 0.1.1), run `npm publish`, then upgrade the consumer's dependency.
+
+### Use in development mode
+
+~~~bash
+# Run the CLI straight from the build output (equivalent to agent-threat-scan after install)
+node dist/cli.js ./path/to/skill --quick --verbose
+node dist/cli.js ./path/to/skill --mode full --json --output report.json
+
+# Local full-mode verification (OpenAI-compatible endpoint example)
+export LLM_ENDPOINT=https://api.deepseek.com/v1 LLM_API_KEY=sk-... \
+       LLM_LITE_MODEL=deepseek-chat LLM_PRO_MODEL=deepseek-chat
+node dist/cli.js ./path/to/skill --mode full --verbose
+
+# Or use the bundled full-scan driver for a directory
+node examples/run-full-scan.mjs ./path/to/skill_dir
+~~~
+
+Notes:
+
+- Model-related environment variables (`LLM_ENDPOINT`, `LLM_API_KEY`, `LLM_LITE_MODEL`, `LLM_PRO_MODEL`, optional `LLM_TIMEOUT_MS`, `LLM_CONTEXT_WINDOW_TOKENS`, `LLM_MAX_AGENT_TURNS`, `LLM_LOCALE`) are documented in "Full mode and model configuration".
+- The model-branch tests under test/ all use mock fetch: no real requests, deterministic results. For real end-to-end verification use the full commands above and inspect `branches` and `tokenUsage` in the report.
+
 
 ## Project layout
 

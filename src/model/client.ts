@@ -222,6 +222,8 @@ export async function askModel<S extends z.ZodType>(fetcher: FetchLike, model: M
 
 export const DEFAULT_CONTENT_CAP = 30_000;
 export const CHARS_PER_TOKEN = 1; // conservative estimate: 1 token ≈ 1 char (safe for CJK), avoids exceeding the model context
+/** Single-shot budget for multi-file inputs whose context window is not declared (see `singleShotBudgetChars`). */
+export const DEFAULT_SINGLE_SHOT_BUDGET = 32_000;
 
 /** Caps single-file content: keeps the head and tail (malicious payloads often hide at the end), bounding cost to avoid context overflow. */
 export function capForModel(content: string, budget = DEFAULT_CONTENT_CAP): string {
@@ -243,4 +245,32 @@ export function capFilesForModel(files: SkillFile[], model: ModelConfig): Array<
     remaining -= content.length;
   }
   return out;
+}
+
+/**
+ * Single-shot budget (chars) for multi-file behavioral analysis. Multi-file
+ * inputs whose combined content fits this budget are analyzed in ONE request
+ * with the full content visible (instead of driving the multi-turn tool-using
+ * agent), which removes most of the per-Skill latency and token cost of a full
+ * scan. When `contextWindowTokens` is declared, half the window is reserved
+ * under the conservative 1 char ≈ 1 token rule (the other half covers prompt
+ * overhead and the JSON response); otherwise a conservative default applies.
+ */
+export function singleShotBudgetChars(model: ModelConfig): number {
+  if (!model.contextWindowTokens) return DEFAULT_SINGLE_SHOT_BUDGET;
+  return Math.max(
+    1,
+    Math.floor((model.contextWindowTokens * CHARS_PER_TOKEN) / 2),
+  );
+}
+
+/** True when every file's full content fits the single-shot analysis budget for `model`. */
+export function fitsSingleShotBudget(files: SkillFile[], model: ModelConfig): boolean {
+  const budget = singleShotBudgetChars(model);
+  let total = 0;
+  for (const file of files) {
+    total += file.content.length;
+    if (total > budget) return false;
+  }
+  return true;
 }
